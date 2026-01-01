@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use anyhow::Result;
 
 mod bluesky;
+mod x;
 
 #[derive(Parser)]
 #[command(name = "social-cli")]
@@ -14,7 +15,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Post a message to Bluesky
-    Post {
+    Bluesky {
+        /// Message to post
+        #[arg(short, long)]
+        message: String,
+    },
+    /// Post a message to X (Twitter)
+    X {
         /// Message to post
         #[arg(short, long)]
         message: String,
@@ -29,10 +36,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Post { message } => {
+        Commands::Bluesky { message } => {
             let post_url = bluesky::post(&message).await?;
-            println!("✓ Posted successfully!");
+            println!("✓ Posted to Bluesky successfully!");
             println!("View your post: {}", post_url);
+            Ok(())
+        }
+        Commands::X { message } => {
+            let post_url = x::post(&message).await?;
+            println!("✓ Posted to X successfully!");
+            println!("View your tweet: {}", post_url);
             Ok(())
         }
     }
