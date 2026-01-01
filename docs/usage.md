@@ -1,12 +1,41 @@
 # 使用方法
 
-## コマンドリファレンス
+**重要**: このドキュメントは、**完成後の使い方を示す設計書**です。現在（Phase 1 MVP）では一部の機能のみ実装予定で、多くの機能はPhase 2以降に実装されます。
 
-Social CLIは3つの主要コマンドで構成されています。
+## 実装状況
+
+| 機能 | Phase 1 (MVP) | Phase 2以降 |
+|------|--------------|------------|
+| Bluesky投稿 (`post -m`) | ✅ 実装予定 | - |
+| X投稿 | - | ⏳ 計画中 |
+| Threads投稿 | - | ⏳ 計画中 |
+| `setup` コマンド | - | ⏳ 計画中 |
+| `status` コマンド | - | ⏳ 計画中 |
+| 設定ファイル管理 | - | ⏳ 計画中 |
+
+**MVP (Phase 1)の使い方**:
+```bash
+# .env ファイルを設定（手動）
+cp .env.example .env
+nano .env  # 認証情報を入力
+
+# Blueskyに投稿
+cargo run -- post -m "Hello, world!"
+```
+
+以下は、完成後の理想的な使い方を示しています。
 
 ---
 
-## `social-cli setup`
+## コマンドリファレンス（将来の完成形）
+
+Social CLIは3つの主要コマンドで構成される予定です。
+
+---
+
+## `social-cli setup` (Phase 2以降)
+
+**注意**: このコマンドはPhase 2以降で実装予定です。MVP (Phase 1)では `.env` ファイルを手動編集します。
 
 初期設定を行うコマンドです。
 
@@ -88,23 +117,47 @@ social-cli setup --platform twitter
 
 SNSに投稿するコマンドです。
 
+**MVP (Phase 1)での実装**:
+- ✅ Blueskyへの投稿のみサポート
+- ✅ `-m` オプションでメッセージ指定
+- ❌ `-p` オプション（プラットフォーム選択）は未実装
+
 ### 基本的な使い方
 
 ```bash
-# 全SNSに投稿
+# MVP (Phase 1): Blueskyに投稿
+cargo run -- post -m "Hello, world!"
+
+# Phase 2以降: 全SNSに投稿
 social-cli post -m "Hello, world!"
 ```
 
 ### オプション
 
-| オプション | 短縮形 | 説明 | デフォルト |
-|-----------|--------|------|-----------|
-| `--message` | `-m` | 投稿メッセージ（必須） | - |
-| `--platform` | `-p` | 投稿先プラットフォーム | `all` |
+| オプション | 短縮形 | 説明 | デフォルト | 実装状況 |
+|-----------|--------|------|-----------|---------|
+| `--message` | `-m` | 投稿メッセージ（必須） | - | ✅ Phase 1 |
+| `--platform` | `-p` | 投稿先プラットフォーム | `all` | ⏳ Phase 2 |
 
 ### 使用例
 
-#### 全SNSに投稿
+#### MVP (Phase 1): Blueskyに投稿
+
+```bash
+# 開発中
+cargo run -- post -m "新機能をリリースしました！"
+
+# ビルド後
+./target/release/social-cli post -m "新機能をリリースしました！"
+```
+
+**実装予定の出力**:
+
+```
+Posted successfully!
+```
+
+#### Phase 2以降: 全SNSに投稿
 
 ```bash
 social-cli post -m "新機能をリリースしました！"
@@ -113,12 +166,18 @@ social-cli post -m "新機能をリリースしました！"
 出力例:
 
 ```
-Posting to 1 platform(s)...
+Posting to 3 platform(s)...
 
 ✓ Bluesky - Posted successfully
   URL: https://bsky.app/profile/user.bsky.social/post/abc123
 
-Summary: 1/1 posts succeeded
+✓ X - Posted successfully
+  URL: https://twitter.com/username/status/123456789
+
+✓ Threads - Posted successfully
+  URL: https://threads.net/@username/post/xyz789
+
+Summary: 3/3 posts succeeded
 ```
 
 #### 特定のプラットフォームのみに投稿（Phase 2以降）
@@ -218,7 +277,9 @@ Summary: 1/2 posts succeeded
 
 ---
 
-## `social-cli status`
+## `social-cli status` (Phase 2以降)
+
+**注意**: このコマンドはPhase 2以降で実装予定です。MVP (Phase 1)では未実装です。
 
 現在の設定状態を確認するコマンドです。
 

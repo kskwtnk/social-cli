@@ -211,22 +211,25 @@ fn build_post_url(handle: &str, rkey: &str) -> String {
 
 ### 概要
 
-X APIは有料化されており、投稿機能を使用するにはBasicプラン以上が必要です。
+X APIは2023年に料金体系が大幅に変更されました。Free Tierでも限定的な投稿が可能です。
 
 ### 公式ドキュメント
 
 - [X API Documentation](https://developer.x.com/en/docs)
 - [API Reference](https://developer.x.com/en/docs/api-reference-index)
 
-### API Tier
+### API Tier（2026年1月時点）
 
 | Tier | 月額 | 投稿機能 | 月間投稿数 |
 |------|------|---------|-----------|
-| Free | $0 | **不可** | 0 |
-| Basic | $100 | 可 | 3,000 |
+| Free | $0 | 可（制限あり） | 100 |
+| Basic | $100-200 | 可 | 3,000 |
 | Pro | $5,000 | 可 | 300,000 |
 
-**重要**: 2023年以降、Free Tierでは投稿ができません。
+**注意**:
+- Free Tierの投稿数は公式ドキュメントでは100 posts/monthとされています
+- Free Tierのレート制限は非常に厳しく、実用的な自動投稿には不向きです
+- 個人使用のMVPであればFree Tierで十分テスト可能です
 
 ### 使用ライブラリ（候補）
 
@@ -391,18 +394,25 @@ https://twitter.com/{username}/status/{tweet_id}
 
 ### 概要
 
-Threads APIはMeta Graph APIを通じて提供されます。現在は限定公開中です。
+Threads APIはMeta Graph APIを通じて提供されています。公開されており、利用可能です。
 
 ### 公式ドキュメント
 
 - [Threads API Documentation](https://developers.facebook.com/docs/threads)
+- [Create Posts - Threads API](https://developers.facebook.com/docs/threads/create-posts)
 
 ### アクセス要件
 
 1. Meta for Developersアカウント
 2. アプリケーション登録
-3. Threads API アクセス申請（審査あり）
-4. Threads Professionalアカウント（ビジネスアカウント）
+3. Threadsビジネスアカウント（認証必須）
+4. `threads_basic` および `threads_content_publish` パーミッション
+
+**注意**:
+- 個人アカウントではなく、ビジネスアカウントとして認証が必要です
+- 24時間で最大250投稿まで可能
+- ハッシュタグは1つのみ、最大500文字
+- 画像・動画は最大10枚/本まで（カルーセル形式）
 
 ### 認証方法
 
@@ -725,9 +735,16 @@ mod tests {
 
 ### 2. 認証情報管理
 
-- APIキー/トークンはキーチェーンに保存
+**MVP方式（.env使用）**:
+- APIキー/トークンは`.env`ファイルに保存
+- `.env`ファイルを`.gitignore`に追加し、Gitにコミットしない
+- ファイルパーミッションを`0o600`（所有者のみ読み書き可）に設定
 - セッションは可能な限り再利用
 - 定期的な認証確認
+
+**将来の拡張（Phase 2以降）**:
+- OSキーチェーンへの移行を検討（keyringクレート使用）
+- より強固なセキュリティが必要な場合に実装
 
 ### 3. レート制限対応
 

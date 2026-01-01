@@ -1,245 +1,150 @@
-# Social CLI - Multi-Platform Social Media Posting Tool
+# Social CLI
 
-## プロジェクト概要
+Rust製のマルチSNS投稿CLIツール（個人使用・MVP）
 
-RustベースのCLIツールで、複数のソーシャルメディアプラットフォーム（Bluesky、X (Twitter)、Threads）に同時投稿できるツールです。
+## 概要
 
-### 目的
+複数のSNSに同時投稿できるコマンドラインツール。
 
-- 単一のコマンドで複数のSNSに同時投稿
-- 認証情報の安全な管理（OSキーチェーン使用）
-- シンプルで直感的なCLIインターフェース
-
-### 対応プラットフォーム（予定）
-
-- ✅ Bluesky (Phase 1: MVP)
+**現在の対応**:
+- ✅ Bluesky (Phase 1 MVP)
 - ⏳ X (Twitter) (Phase 2)
 - ⏳ Threads (Phase 3)
+
+**対象ユーザー**: 自分（個人使用）
+
+---
+
+## クイックスタート
+
+```bash
+# 1. 環境設定
+cp .env.example .env
+# .envを編集してBluesky認証情報を設定
+
+# 2. ビルド
+cargo build
+
+# 3. 投稿
+cargo run -- post -m "Hello from Rust!"
+```
 
 ---
 
 ## 技術スタック
 
-### 言語・ランタイム
-- **Rust** (Edition 2021)
-- **非同期**: tokio
-
-### 主要クレート
-
 | カテゴリ | クレート | 用途 |
 |---------|---------|------|
-| CLI | clap | コマンドライン引数パース |
-| 非同期 | tokio, async-trait | 非同期ランタイム |
+| CLI | clap | コマンドライン引数 |
+| 非同期 | tokio | 非同期ランタイム |
 | HTTP | reqwest | HTTP クライアント |
-| Bluesky | atrium-api, atrium-xrpc-client | Bluesky API クライアント |
-| 設定 | serde, toml, directories | 設定ファイル管理 |
-| セキュリティ | keyring, rpassword | 認証情報の安全な保存 |
-| エラー処理 | thiserror, anyhow | カスタムエラー型 |
-| UI | colored | カラー出力 |
+| Bluesky | atrium-api | Bluesky API |
+| 環境変数 | dotenv | .env読み込み |
+| エラー | anyhow | エラー処理 |
+
+**Rust Edition**: 2021（安定性優先）
 
 ---
 
-## プロジェクト構造
+## プロジェクト構造（MVP）
 
 ```
 social-cli/
-├── CLAUDE.md                    # このファイル
-├── Cargo.toml                   # プロジェクト定義
+├── .env                     # 認証情報（git無視）
+├── .env.example             # テンプレート
 ├── .gitignore
-├── docs/                        # 詳細ドキュメント
-│   ├── architecture.md          # アーキテクチャ設計
-│   ├── setup.md                 # セットアップガイド
-│   ├── usage.md                 # 使用方法
-│   ├── api-integration.md       # API統合詳細
-│   └── security.md              # セキュリティ考慮事項
+├── Cargo.toml
+├── CLAUDE.md                # このファイル
 ├── src/
-│   ├── main.rs                  # エントリーポイント
-│   ├── lib.rs                   # ライブラリルート
-│   ├── error.rs                 # エラー型定義
-│   ├── config.rs                # 設定管理
-│   ├── commands/                # CLIコマンド
-│   │   ├── mod.rs
-│   │   ├── setup.rs             # 初期設定
-│   │   ├── post.rs              # 投稿機能
-│   │   └── status.rs            # 設定確認
-│   ├── platforms/               # SNSプラットフォーム統合
-│   │   ├── mod.rs
-│   │   ├── traits.rs            # 共通trait
-│   │   ├── bluesky.rs           # Bluesky実装
-│   │   └── twitter.rs           # Twitter実装（Phase 2）
-│   └── utils/                   # ユーティリティ
-│       ├── mod.rs
-│       └── keyring.rs           # 認証情報保存
-└── tests/
-    └── integration_tests.rs
+│   ├── main.rs              # エントリーポイント
+│   └── bluesky.rs           # Bluesky API実装
+└── docs/                    # 詳細ドキュメント
+    ├── architecture.md
+    ├── setup.md
+    ├── usage.md
+    ├── api-integration.md
+    └── security.md
 ```
 
 ---
 
-## クイックリファレンス
-
-### 重要ファイル
-
-| ファイル | 役割 |
-|---------|------|
-| [src/error.rs](src/error.rs) | カスタムエラー型（`SocialCliError`）- 全体の基盤 |
-| [src/platforms/traits.rs](src/platforms/traits.rs) | `SocialPlatform` trait - プラットフォーム抽象化 |
-| [src/config.rs](src/config.rs) | 設定ファイル管理 |
-| [src/utils/keyring.rs](src/utils/keyring.rs) | 認証情報の安全な保存 |
-| [src/commands/post.rs](src/commands/post.rs) | 投稿ロジック |
-| [src/platforms/bluesky.rs](src/platforms/bluesky.rs) | Bluesky API統合 |
-
-### コマンドリファレンス
+## コマンド
 
 ```bash
-# 初期設定
-social-cli setup
+# 投稿
+cargo run -- post -m "メッセージ"
 
-# 全SNSに投稿
-social-cli post -m "Hello, world!"
-
-# 設定確認
-social-cli status
+# ヘルプ
+cargo run -- --help
 ```
 
 ---
 
-## アーキテクチャ概要
+## 環境設定（.env）
 
-### コアデザイン原則
-
-1. **プラットフォーム抽象化**: `SocialPlatform` traitで統一インターフェース
-2. **セキュリティ第一**: 認証情報はOSキーチェーンに暗号化保存
-3. **エラー透過性**: 詳細なエラーメッセージで問題特定を容易に
-4. **並列投稿**: 複数SNSへの同時投稿で高速化
-
-### SocialPlatform Trait
-
-すべてのSNSプラットフォームは以下のtraitを実装します：
-
-```rust
-#[async_trait]
-pub trait SocialPlatform: Send + Sync {
-    fn name(&self) -> &'static str;
-    async fn verify_credentials(&self) -> Result<bool>;
-    async fn post_text(&self, message: &str) -> Result<PostResponse>;
-    fn max_message_length(&self) -> usize;
-}
+```bash
+# Bluesky認証情報
+BLUESKY_IDENTIFIER=user.bsky.social
+BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 ```
 
-### エラーハンドリング
-
-カスタムエラー型（`SocialCliError`）で一貫したエラー処理：
-
-- `ConfigError`: 設定ファイル関連
-- `AuthError`: 認証エラー
-- `ApiError`: API呼び出しエラー
-- `NetworkError`: ネットワークエラー
-
-詳細は [docs/architecture.md](docs/architecture.md) を参照。
-
----
-
-## 設定とセキュリティ
-
-### 設定ファイルの場所
-
-- **Unix/macOS**: `~/.config/social-cli/config.toml`
-- **Windows**: `%APPDATA%\social-cli\config.toml`
-
-### 認証情報の保存
-
-パスワード・トークンはOSキーチェーンに保存：
-
-- **macOS**: Keychain
-- **Windows**: Credential Manager
-- **Linux**: Secret Service (libsecret)
-
-設定ファイルには**認証情報を含めません**。
-
-詳細は [docs/security.md](docs/security.md) を参照。
+**App Password取得方法**:
+1. Bluesky → Settings → App Passwords
+2. "Add App Password" → 名前入力（例: "social-cli"）
+3. 生成されたパスワードを`.env`に貼り付け
 
 ---
 
 ## 開発フェーズ
 
-### Phase 0: ドキュメント作成 ✅
-- プロジェクト設計とドキュメント整備
+### Phase 1: MVP (現在)
+- Bluesky投稿のみ
+- .env認証
+- シンプルなCLI
 
-### Phase 1: Bluesky MVP（現在）
-- Bluesky投稿機能の実装
-- 設定管理とキーチェーン統合
-- 基本的なCLIコマンド
+### Phase 2: 拡張
+- X (Twitter) 対応
+- 複数SNS同時投稿
 
-### Phase 2: X (Twitter) 統合
-- X API統合（有料プラン前提）
-- マルチプラットフォーム投稿のエラーハンドリング強化
-
-### Phase 3: 拡張機能
-- Threads API統合
-- 画像添付サポート
-- 投稿履歴管理
+### Phase 3: 高度な機能
+- Threads対応
+- 設定ファイル管理
+- キーチェーン統合
 
 ---
 
-## AI開発時の重要な制約・方針
+## ドキュメント
 
-### コーディング規約
+詳細な情報は以下を参照：
 
-1. **エラー処理**: すべてのエラーは`Result<T, SocialCliError>`で処理
-2. **非同期**: I/O操作は必ず`async/await`を使用
-3. **設定の不変性**: 設定読み込み後は変更しない（イミュータブル）
-4. **セキュリティ**: 認証情報をログ出力しない、平文保存しない
-
-### テスト方針
-
-- ユニットテスト: 各モジュールに`#[cfg(test)] mod tests`
-- 統合テスト: `tests/`ディレクトリ
-- モックAPI: 本番APIを叩かないテスト環境
-
-### セキュリティチェックリスト
-
-- [ ] 認証情報はキーチェーンに保存
-- [ ] 設定ファイルのパーミッション = `0o600`
-- [ ] トークン・パスワードをログに出力しない
-- [ ] HTTPSのみ使用（HTTP自動アップグレード）
+- **[アーキテクチャ設計](docs/architecture.md)** - システム設計、モジュール構成
+- **[セットアップガイド](docs/setup.md)** - 環境構築、トラブルシューティング
+- **[使用方法](docs/usage.md)** - コマンドリファレンス、使用例
+- **[API統合ガイド](docs/api-integration.md)** - Bluesky/Twitter/Threads API詳細
+- **[セキュリティ](docs/security.md)** - 認証情報管理、ベストプラクティス
 
 ---
 
 ## トラブルシューティング
 
-### よくある問題
+### ビルドエラー
 
-1. **キーチェーンアクセスエラー**
-   - macOSの場合、初回はキーチェーンへのアクセス許可が必要
-   - Linux の場合、`libsecret-1-dev`のインストールが必要
+```bash
+# Rustを最新に更新
+rustup update stable
 
-2. **Bluesky認証エラー**
-   - App Passwordを使用（通常パスワードではない）
-   - Bluesky設定から生成: Settings → App Passwords
+# 依存関係を再取得
+cargo clean
+cargo build
+```
 
-3. **ビルドエラー**
-   - Rust最新安定版を使用（`rustup update stable`）
-   - 依存関係のバージョン競合確認
+### 認証エラー
+
+- `.env`ファイルが存在するか確認
+- App Password（通常パスワードではない）を使用
+- Bluesky設定でApp Passwordが削除されていないか確認
 
 詳細は [docs/usage.md](docs/usage.md) を参照。
-
----
-
-## 参考リソース
-
-### 公式ドキュメント
-
-- [Bluesky AT Protocol](https://docs.bsky.app/)
-- [X API Documentation](https://developer.x.com/en/docs)
-- [Rust Async Book](https://rust-lang.github.io/async-book/)
-
-### 関連クレート
-
-- [clap](https://docs.rs/clap/)
-- [tokio](https://docs.rs/tokio/)
-- [atrium-api](https://docs.rs/atrium-api/)
-- [keyring](https://docs.rs/keyring/)
 
 ---
 

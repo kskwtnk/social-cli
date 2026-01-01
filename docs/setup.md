@@ -1,12 +1,14 @@
 # セットアップガイド
 
-## 開発環境構築
+**注意**: このドキュメントは将来の拡張を見据えた内容も含まれています。MVP（Phase 1）では macOS 環境での `.env` ベースの簡易セットアップのみを想定しています。
+
+## 開発環境構築（MVP - macOS）
 
 ### 前提条件
 
 - **Rust**: 1.70以上（推奨: 最新安定版）
-- **OS**: macOS, Linux, Windows
-- **その他**: インターネット接続、各SNSのアカウント
+- **OS**: macOS（MVP Phase 1の対象）
+- **その他**: インターネット接続、Blueskyアカウント
 
 ---
 
@@ -67,13 +69,34 @@ cargo build --release
 
 ---
 
-## OS別の追加セットアップ
+## macOS環境設定（MVP）
 
-### macOS
+MVPではmacOSを対象としており、特別な追加セットアップは不要です。
 
-特別な設定は不要です。キーチェーンアクセスが自動的に処理されます。
+### .env ファイルの準備
 
-### Linux
+```bash
+# プロジェクトディレクトリで実行
+cd /path/to/social-cli
+
+# .env.example から .env を作成
+cp .env.example .env
+
+# パーミッションを設定（重要）
+chmod 600 .env
+
+# .env を編集してBluesky認証情報を設定
+nano .env  # または vi, vscode など
+```
+
+---
+
+## Phase 2以降: 他OS対応（参考）
+
+**注意**: 以下は将来の拡張用の参考情報です。MVP Phase 1では不要です。
+
+<details>
+<summary>Linux環境での追加セットアップ（Phase 2以降）</summary>
 
 #### Secret Service のインストール
 
@@ -101,9 +124,14 @@ sudo dnf install gcc pkg-config openssl-devel
 sudo pacman -S base-devel pkg-config openssl
 ```
 
-### Windows
+</details>
+
+<details>
+<summary>Windows環境での追加セットアップ（Phase 2以降）</summary>
 
 Windows Credential Managerが自動的に使用されます。追加セットアップは不要です。
+
+</details>
 
 ---
 
@@ -129,20 +157,22 @@ Windows Credential Managerが自動的に使用されます。追加セットア
 
 ### X (Twitter) - Phase 2
 
-#### API Tierの確認
+#### API Tierの確認（2026年1月時点）
 
-X APIは有料化されています。以下のいずれかのプランが必要です：
+X APIは2023年に料金体系が変更されました：
 
-- **Free**: 読み取り専用（投稿不可の可能性あり）
-- **Basic**: $100/月 - 基本的な投稿機能
-- **Pro**: $5,000/月 - 高度な機能
+- **Free**: $0/月 - 月間100投稿まで可能（個人MVP用途には十分）
+- **Basic**: $100-200/月 - 月間3,000投稿
+- **Pro**: $5,000/月 - 月間300,000投稿、高度な機能
 
-#### APIキーの取得（Basic以上）
+#### APIキーの取得
 
 1. [X Developer Portal](https://developer.x.com/) にアクセス
 2. "Create Project" → "Create App"
 3. API Key、API Secret、Access Token、Access Token Secretを取得
 4. 必要なパーミッション: **Read and Write**
+
+**注意**: Free Tierでもテスト・個人使用には十分ですが、レート制限が厳しいため実用的な自動投稿には不向きです。
 
 ---
 
@@ -152,41 +182,88 @@ X APIは有料化されています。以下のいずれかのプランが必要
 
 1. [Meta for Developers](https://developers.facebook.com/) でアカウント作成
 2. アプリケーション登録
-3. Threads APIへのアクセス申請
-4. アクセストークン取得
+3. Threadsビジネスアカウントとして認証
+4. `threads_basic` および `threads_content_publish` パーミッション取得
+5. アクセストークン取得
 
-**注意**: Threads APIは限定公開中。アクセスには審査が必要な場合があります。
+**制限事項**:
+- ビジネスアカウント認証が必須（個人アカウントでは不可）
+- 24時間で最大250投稿
+- ハッシュタグは1つのみ、最大500文字
+- 画像・動画は最大10枚/本まで
 
 ---
 
-## 初回セットアップ
+## 初回セットアップ（MVP）
 
-### 1. バイナリのインストール（オプション）
+### 1. .env ファイルの作成
 
 ```bash
-# システム全体で使用する場合
-cargo install --path .
+# プロジェクトディレクトリに移動
+cd /path/to/social-cli
 
-# または、パスを通す
-export PATH="$PATH:$(pwd)/target/release"
+# .env.example をコピー
+cp .env.example .env
+
+# パーミッション設定（重要）
+chmod 600 .env
 ```
 
-### 2. 設定ディレクトリの確認
+### 2. .env ファイルの編集
 
-設定ファイルは以下の場所に保存されます：
+```bash
+# エディタで .env を開く
+nano .env  # または vim, code など
+```
 
-- **macOS/Linux**: `~/.config/social-cli/`
-- **Windows**: `%APPDATA%\social-cli\`
+以下のように編集：
 
-ディレクトリは初回実行時に自動作成されます。
+```bash
+# Bluesky認証情報
+BLUESKY_IDENTIFIER=your-handle.bsky.social
+BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+```
 
-### 3. Blueskyのセットアップ
+**重要**:
+- `BLUESKY_IDENTIFIER`: Blueskyのハンドル（例: `user.bsky.social`）またはメールアドレス
+- `BLUESKY_APP_PASSWORD`: Bluesky Settings → App Passwords で生成したApp Password
+
+### 3. ビルドと実行
+
+```bash
+# ビルド
+cargo build --release
+
+# 投稿テスト
+cargo run --release -- post -m "Hello from social-cli!"
+```
+
+### 4. 動作確認
+
+正常に投稿されると以下のような出力が表示されます：
+
+```
+Posted successfully!
+```
+
+Blueskyアプリまたはウェブで投稿を確認できます。
+
+---
+
+## Phase 2以降: 設定管理機能（参考）
+
+**注意**: 以下は将来の拡張用の参考情報です。MVP Phase 1では実装されていません。
+
+<details>
+<summary>setupコマンド・statusコマンド（Phase 2以降）</summary>
+
+### setupコマンド
 
 ```bash
 social-cli setup
 ```
 
-対話形式で以下を入力：
+対話形式で認証情報を設定：
 
 ```
 Social CLI Setup
@@ -201,13 +278,13 @@ App Password: ****
 ✓ Configuration saved successfully!
 ```
 
-### 4. 設定の確認
+### statusコマンド
 
 ```bash
 social-cli status
 ```
 
-出力例：
+現在の設定状態を確認：
 
 ```
 Social CLI Configuration Status
@@ -220,6 +297,8 @@ Bluesky:
 Twitter:
   Status: ✗ Not configured
 ```
+
+</details>
 
 ---
 
