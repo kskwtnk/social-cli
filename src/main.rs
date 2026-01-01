@@ -9,25 +9,29 @@ mod x;
 #[command(name = "social-cli")]
 #[command(about = "Multi-platform social media posting CLI tool", long_about = None)]
 struct Cli {
+    /// Message to post (posts to all platforms if no subcommand is specified)
+    #[arg(short, long)]
+    message: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Post a message to Bluesky
+    /// Post a message to Bluesky only
     Bluesky {
         /// Message to post
         #[arg(short, long)]
         message: String,
     },
-    /// Post a message to X (Twitter)
+    /// Post a message to X (Twitter) only
     X {
         /// Message to post
         #[arg(short, long)]
         message: String,
     },
-    /// Post a message to Threads
+    /// Post a message to Threads only
     Threads {
         /// Message to post
         #[arg(short, long)]
@@ -43,22 +47,66 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Bluesky { message } => {
+        Some(Commands::Bluesky { message }) => {
             let post_url = bluesky::post(&message).await?;
             println!("✓ Posted to Bluesky successfully!");
             println!("View your post: {}", post_url);
             Ok(())
         }
-        Commands::X { message } => {
+        Some(Commands::X { message }) => {
             let post_url = x::post(&message).await?;
             println!("✓ Posted to X successfully!");
             println!("View your tweet: {}", post_url);
             Ok(())
         }
-        Commands::Threads { message } => {
+        Some(Commands::Threads { message }) => {
             let post_url = threads::post(&message).await?;
             println!("✓ Posted to Threads successfully!");
             println!("View your thread: {}", post_url);
+            Ok(())
+        }
+        None => {
+            // Post to all platforms
+            let message = cli.message.ok_or_else(|| {
+                anyhow::anyhow!("Message is required. Use -m or --message flag.")
+            })?;
+
+            println!("Posting to all platforms...\n");
+
+            // Post to Bluesky
+            match bluesky::post(&message).await {
+                Ok(post_url) => {
+                    println!("✓ Posted to Bluesky successfully!");
+                    println!("  {}", post_url);
+                }
+                Err(e) => {
+                    println!("✗ Failed to post to Bluesky: {}", e);
+                }
+            }
+
+            // Post to X
+            match x::post(&message).await {
+                Ok(post_url) => {
+                    println!("✓ Posted to X successfully!");
+                    println!("  {}", post_url);
+                }
+                Err(e) => {
+                    println!("✗ Failed to post to X: {}", e);
+                }
+            }
+
+            // Post to Threads
+            match threads::post(&message).await {
+                Ok(post_url) => {
+                    println!("✓ Posted to Threads successfully!");
+                    println!("  {}", post_url);
+                }
+                Err(e) => {
+                    println!("✗ Failed to post to Threads: {}", e);
+                }
+            }
+
+            println!("\nPosting complete!");
             Ok(())
         }
     }
