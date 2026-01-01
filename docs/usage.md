@@ -1,25 +1,25 @@
 # 使用方法
 
-**重要**: このドキュメントは、**現在の使い方と将来の拡張計画**を示しています。Phase 1-2の基本機能は実装済みで、Phase 3以降の機能は計画段階です。
+**重要**: このドキュメントは、**現在の使い方と将来の拡張計画**を示しています。Phase 1-3の基本機能は実装済みで、Phase 4以降の機能は計画段階です。
 
 ## 実装状況
 
-| 機能 | Phase 1-2 (実装済み) | Phase 3以降 |
+| 機能 | Phase 1-3 (実装済み) | Phase 4以降 |
 |------|---------------------|------------|
 | Bluesky投稿 (`bluesky -m`) | ✅ **実装済み** | - |
 | X投稿 (`x -m`) | ✅ **実装済み** | - |
+| Threads投稿 (`threads -m`) | ✅ **実装済み** | - |
 | 投稿URLの表示 | ✅ **実装済み** | - |
-| Threads投稿 | - | ⏳ 計画中 |
 | 複数SNS同時投稿 | - | ⏳ 計画中 |
 | `setup` コマンド | - | ⏳ 計画中 |
 | `status` コマンド | - | ⏳ 計画中 |
 | 設定ファイル管理 | - | ⏳ 計画中 |
 
-**現在の使い方（Phase 1-2）**:
+**現在の使い方（Phase 1-3）**:
 ```bash
 # .env ファイルを設定（手動）
 cp .env.example .env
-nano .env  # BlueskyとXの認証情報を入力
+nano .env  # Bluesky、X、Threadsの認証情報を入力
 
 # Blueskyに投稿
 cargo run -- bluesky -m "Hello, Bluesky!"
@@ -34,9 +34,16 @@ cargo run -- x -m "Hello, X!"
 # 出力:
 # ✓ Posted to X successfully!
 # View your tweet: https://x.com/i/web/status/1234567890123456789
+
+# Threadsに投稿
+cargo run -- threads -m "Hello, Threads!"
+
+# 出力:
+# ✓ Posted to Threads successfully!
+# View your thread: https://www.threads.net/@user_id/post/abc123xyz
 ```
 
-以下は、将来の拡張機能（Phase 3以降）の理想的な使い方を示しています。
+以下は、将来の拡張機能（Phase 4以降）の理想的な使い方を示しています。
 
 ---
 
@@ -46,9 +53,9 @@ Social CLIは3つの主要コマンドで構成される予定です。
 
 ---
 
-## `social-cli setup` (Phase 2以降)
+## `social-cli setup` (Phase 4以降)
 
-**注意**: このコマンドはPhase 2以降で実装予定です。MVP (Phase 1)では `.env` ファイルを手動編集します。
+**注意**: このコマンドはPhase 4以降で実装予定です。Phase 1-3では `.env` ファイルを手動編集します。
 
 初期設定を行うコマンドです。
 

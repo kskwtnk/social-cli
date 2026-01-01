@@ -9,7 +9,7 @@ Rust製のマルチSNS投稿CLIツール（個人使用・MVP）
 **現在の対応**:
 - ✅ Bluesky (Phase 1 完了)
 - ✅ X (Twitter) (Phase 2 完了)
-- ⏳ Threads (Phase 3)
+- ✅ Threads (Phase 3 完了)
 
 **対象ユーザー**: 自分（個人使用）
 
@@ -30,6 +30,9 @@ cargo run -- bluesky -m "Hello from Rust!"
 
 # または、Xに投稿
 cargo run -- x -m "Hello from Rust!"
+
+# または、Threadsに投稿
+cargo run -- threads -m "Hello from Rust!"
 ```
 
 ---
@@ -44,6 +47,7 @@ cargo run -- x -m "Hello from Rust!"
 | Bluesky | atrium-api | Bluesky API クライアント |
 | Bluesky | atrium-xrpc-client | AT Protocol XRPC通信 |
 | X (Twitter) | reqwest-oauth1 | OAuth 1.0a署名 |
+| Threads | (reqwest使用) | Meta Graph API OAuth 2.0 |
 | 環境変数 | dotenvy | .env読み込み |
 | エラー | anyhow | シンプルなエラー処理 |
 | シリアライズ | serde / serde_json | JSON変換 |
@@ -65,7 +69,8 @@ social-cli/
 ├── src/
 │   ├── main.rs              # エントリーポイント
 │   ├── bluesky.rs           # Bluesky API実装
-│   └── x.rs                 # X (Twitter) API実装
+│   ├── x.rs                 # X (Twitter) API実装
+│   └── threads.rs           # Threads API実装
 └── docs/                    # 詳細ドキュメント
     ├── architecture.md
     ├── setup.md
@@ -85,10 +90,14 @@ cargo run -- bluesky -m "メッセージ"
 # Xに投稿（開発モード）
 cargo run -- x -m "メッセージ"
 
+# Threadsに投稿（開発モード）
+cargo run -- threads -m "メッセージ"
+
 # リリースビルド
 cargo build --release
 ./target/release/social-cli bluesky -m "メッセージ"
 ./target/release/social-cli x -m "メッセージ"
+./target/release/social-cli threads -m "メッセージ"
 
 # ヘルプ
 cargo run -- --help
@@ -106,6 +115,12 @@ View your post: https://bsky.app/profile/user.bsky.social/post/abc123xyz
 View your tweet: https://x.com/i/web/status/1234567890123456789
 ```
 
+**出力例（Threads）**:
+```
+✓ Posted to Threads successfully!
+View your thread: https://www.threads.net/@your_user_id/post/abc123xyz
+```
+
 ---
 
 ## 環境設定（.env）
@@ -120,6 +135,10 @@ X_CONSUMER_KEY=your_consumer_key_here
 X_CONSUMER_SECRET=your_consumer_secret_here
 X_ACCESS_TOKEN=your_access_token_here
 X_ACCESS_TOKEN_SECRET=your_access_token_secret_here
+
+# Threads 認証情報
+THREADS_USER_ID=your_user_id_here
+THREADS_ACCESS_TOKEN=your_access_token_here
 ```
 
 **Bluesky App Password取得方法**:
@@ -133,6 +152,16 @@ X_ACCESS_TOKEN_SECRET=your_access_token_secret_here
 3. App settings → User authentication settings を設定
 4. Keys and tokens → Consumer Keys と Authentication Tokens を生成
 5. 4つのキーを`.env`に貼り付け
+
+**Threads API認証情報取得方法**:
+1. [Meta for Developers](https://developers.facebook.com/) にアクセス
+2. 「アプリを作成」でアプリを作成し、Threads API製品を追加
+3. Threads製品の設定画面でAccess Tokenを生成（権限: `threads_basic`, `threads_content_publish`）
+4. ターミナルでUser IDを取得:
+   ```bash
+   curl "https://graph.threads.net/v1.0/me?fields=id,username&access_token=YOUR_ACCESS_TOKEN"
+   ```
+5. レスポンスから数値のUser IDを取得し、`.env`に貼り付け
 
 ---
 
@@ -148,8 +177,12 @@ X_ACCESS_TOKEN_SECRET=your_access_token_secret_here
 - OAuth 1.0a認証
 - 個別SNS選択コマンド
 
-### Phase 3: 高度な機能（今後）
-- Threads対応
+### Phase 3: Threads対応 ✅ 完了
+- Threads投稿機能
+- OAuth 2.0認証（Meta Graph API）
+- 3ステップ投稿プロセス（コンテナ作成→公開→パーマリンク取得）
+
+### Phase 4: 高度な機能（今後）
 - 複数SNS同時投稿
 - 設定ファイル管理
 - キーチェーン統合
@@ -203,6 +236,12 @@ cargo build
 - App permissionsが「Read and Write」になっているか確認
 - Access TokenとAccess Token Secretを **User authentication settings設定後に再生成**したか確認
 - Free tierの上限（月500投稿）に達していないか確認
+
+**Threads**:
+- Meta for DevelopersでThreads API製品が追加されているか確認
+- Access Tokenに必要な権限（`threads_basic`, `threads_content_publish`）が付与されているか確認
+- User IDが正しいか確認（数値ID、ユーザー名ではない）
+- ターミナルで `curl "https://graph.threads.net/v1.0/me?fields=id&access_token=YOUR_TOKEN"` を実行してIDを確認
 
 **.envファイルのパーミッション**:
 ```bash

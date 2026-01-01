@@ -6,7 +6,7 @@ Social CLIは、プラットフォーム抽象化レイヤーを中心とした�
 
 ---
 
-## システムアーキテクチャ図（Phase 1-2 実装済み）
+## システムアーキテクチャ図（Phase 1-3 実装済み）
 
 ```mermaid
 graph TD
@@ -14,38 +14,46 @@ graph TD
 
     Main --> BlueskyCmd[bluesky コマンド]
     Main --> XCmd[x コマンド]
+    Main --> ThreadsCmd[threads コマンド]
 
     BlueskyCmd --> Env[.env ファイル]
     XCmd --> Env
+    ThreadsCmd --> Env
 
     BlueskyCmd --> BlueskyMod[src/bluesky.rs<br/>Bluesky投稿ロジック]
     XCmd --> XMod[src/x.rs<br/>X投稿ロジック]
+    ThreadsCmd --> ThreadsMod[src/threads.rs<br/>Threads投稿ロジック]
 
     BlueskyMod --> AtriumAPI[atrium-api<br/>Bluesky API Client]
     XMod --> OAuth1[reqwest-oauth1<br/>OAuth 1.0a署名]
+    ThreadsMod --> Reqwest[reqwest<br/>HTTP Client]
 
     AtriumAPI --> BlueskyAPI[Bluesky API<br/>https://bsky.social]
     OAuth1 --> XAPI[X API v2<br/>https://api.twitter.com/2/tweets]
+    Reqwest --> ThreadsAPI[Threads API<br/>https://graph.threads.net/v1.0]
 
     Env -.-> |BLUESKY_*| BlueskyMod
     Env -.-> |X_*| XMod
+    Env -.-> |THREADS_*| ThreadsMod
 
     style User fill:#e1f5ff
     style Main fill:#fff4e1
     style BlueskyMod fill:#e8f5e9
     style XMod fill:#e3f2fd
+    style ThreadsMod fill:#f3e5f5
     style Env fill:#ffe1e1
     style BlueskyAPI fill:#f3e5f5
     style XAPI fill:#e8eaf6
+    style ThreadsAPI fill:#fce4ec
 ```
 
-**Phase 1-2 構成の特徴**:
-- 3ファイル構成（main.rs + bluesky.rs + x.rs）
+**Phase 1-3 構成の特徴**:
+- 4ファイル構成（main.rs + bluesky.rs + x.rs + threads.rs）
 - .env ファイルで認証情報管理
-- BlueskyとX (Twitter) の両方をサポート
-- 個別のサブコマンド（`bluesky`, `x`）で投稿先を選択
+- Bluesky、X (Twitter)、Threadsの3つのSNSをサポート
+- 個別のサブコマンド（`bluesky`, `x`, `threads`）で投稿先を選択
 
-### 将来のアーキテクチャ（Phase 3以降）
+### 将来のアーキテクチャ（Phase 4以降）
 
 ```mermaid
 graph TD
@@ -90,6 +98,7 @@ use clap::{Parser, Subcommand};
 use anyhow::Result;
 
 mod bluesky;
+mod threads;
 mod x;
 
 #[derive(Parser)]
@@ -109,6 +118,11 @@ enum Commands {
     },
     /// Post a message to X (Twitter)
     X {
+        #[arg(short, long)]
+        message: String,
+    },
+    /// Post a message to Threads
+    Threads {
         #[arg(short, long)]
         message: String,
     },
@@ -132,13 +146,19 @@ async fn main() -> Result<()> {
             println!("View your tweet: {}", post_url);
             Ok(())
         }
+        Commands::Threads { message } => {
+            let post_url = threads::post(&message).await?;
+            println!("✓ Posted to Threads successfully!");
+            println!("View your thread: {}", post_url);
+            Ok(())
+        }
     }
 }
 ```
 
 **依存**: clap, tokio, anyhow, dotenvy
 
-**Phase 3以降の拡張予定**:
+**Phase 4以降の拡張予定**:
 ```rust
 #[derive(Subcommand)]
 enum Commands {
@@ -336,7 +356,108 @@ pub async fn post(message: &str) -> Result<String> {
 
 ---
 
-### 5. 設定管理 (Phase 3以降)
+### 5. Threadsモジュール (src/threads.rs) - Phase 3 実装
+
+**役割**: Threads投稿機能
+
+**現在の実装**:
+```rust
+use anyhow::{Context, Result};
+use reqwest::Client;
+use serde::Deserialize;
+use std::env;
+
+/// Response from creating a media container
+#[derive(Debug, Deserialize)]
+struct CreateContainerResponse {
+    id: String,
+}
+
+/// Response from publishing a thread
+#[derive(Debug, Deserialize)]
+struct PublishResponse {
+    id: String,
+}
+
+/// Post a message to Threads
+/// Returns the URL of the created thread
+pub async fn post(message: &str) -> Result<String> {
+    // 環境変数から認証情報を取得
+    let user_id = env::var("THREADS_USER_ID")
+        .context("THREADS_USER_ID not set in .env file")?;
+    let access_token = env::var("THREADS_ACCESS_TOKEN")
+        .context("THREADS_ACCESS_TOKEN not set in .env file")?;
+
+    let client = Client::new();
+
+    // Step 1: メディアコンテナを作成
+    let create_url = format!("https://graph.threads.net/v1.0/{}/threads", user_id);
+
+    let create_response = client
+        .post(&create_url)
+        .query(&[
+            ("media_type", "TEXT"),
+            ("text", message),
+            ("access_token", &access_token),
+        ])
+        .send()
+        .await
+        .context("Failed to create media container")?;
+
+    let container: CreateContainerResponse = create_response
+        .json()
+        .await
+        .context("Failed to parse container creation response")?;
+
+    // Step 2: コンテナを公開
+    let publish_url = format!("https://graph.threads.net/v1.0/{}/threads_publish", user_id);
+
+    let publish_response = client
+        .post(&publish_url)
+        .query(&[
+            ("creation_id", &container.id),
+            ("access_token", &access_token),
+        ])
+        .send()
+        .await
+        .context("Failed to publish thread")?;
+
+    let publish: PublishResponse = publish_response
+        .json()
+        .await
+        .context("Failed to parse publish response")?;
+
+    // URLを構築
+    let thread_url = format!("https://www.threads.net/@{}/post/{}", user_id, publish.id);
+
+    Ok(thread_url)
+}
+```
+
+**依存**: reqwest, serde, anyhow
+
+**設計のポイント**:
+- Threads API特有の2ステッププロセス（コンテナ作成→公開）
+- OAuth 2.0認証（Meta Graph API）
+- User IDとAccess Tokenで認証
+- レスポンスからPost IDを抽出してURLを構築
+
+**投稿フロー**:
+1. `POST /v1.0/{user-id}/threads` でメディアコンテナ作成
+   - パラメータ: `media_type=TEXT`, `text=メッセージ`, `access_token`
+   - レスポンス: コンテナID
+2. `POST /v1.0/{user-id}/threads_publish` でコンテナを公開
+   - パラメータ: `creation_id=コンテナID`, `access_token`
+   - レスポンス: 投稿ID
+3. 投稿URLを返す
+
+**認証情報**:
+- `THREADS_USER_ID`: Instagram/ThreadsのユーザーID
+- `THREADS_ACCESS_TOKEN`: Long-lived Access Token（60日間有効）
+
+---
+
+### 6. 設定管理 (Phase 4以降)
 
 **役割**: 設定ファイルの読み書き（Phase 2以降で実装予定）
 
