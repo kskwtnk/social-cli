@@ -6,7 +6,8 @@
 
 | 機能 | Phase 1 (MVP) | Phase 2以降 |
 |------|--------------|------------|
-| Bluesky投稿 (`post -m`) | ✅ 実装予定 | - |
+| Bluesky投稿 (`post -m`) | ✅ **実装済み** | - |
+| 投稿URLの表示 | ✅ **実装済み** | - |
 | X投稿 | - | ⏳ 計画中 |
 | Threads投稿 | - | ⏳ 計画中 |
 | `setup` コマンド | - | ⏳ 計画中 |
@@ -21,6 +22,10 @@ nano .env  # 認証情報を入力
 
 # Blueskyに投稿
 cargo run -- post -m "Hello, world!"
+
+# 出力:
+# ✓ Posted successfully!
+# View your post: https://bsky.app/profile/user.bsky.social/post/abc123
 ```
 
 以下は、完成後の理想的な使い方を示しています。
@@ -151,11 +156,14 @@ cargo run -- post -m "新機能をリリースしました！"
 ./target/release/social-cli post -m "新機能をリリースしました！"
 ```
 
-**実装予定の出力**:
+**実際の出力**:
 
 ```
-Posted successfully!
+✓ Posted successfully!
+View your post: https://bsky.app/profile/user.bsky.social/post/3kh5rxg4xd22p
 ```
+
+投稿URLをクリックするとブラウザでBlueskyの投稿を確認できます。
 
 #### Phase 2以降: 全SNSに投稿
 

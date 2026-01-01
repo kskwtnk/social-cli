@@ -37,12 +37,15 @@ cargo run -- post -m "Hello from Rust!"
 |---------|---------|------|
 | CLI | clap | コマンドライン引数 |
 | 非同期 | tokio | 非同期ランタイム |
-| HTTP | reqwest | HTTP クライアント |
-| Bluesky | atrium-api | Bluesky API |
-| 環境変数 | dotenv | .env読み込み |
-| エラー | anyhow | エラー処理 |
+| HTTP | reqwest | HTTP クライアント（atriumが内部使用） |
+| Bluesky | atrium-api | Bluesky API クライアント |
+| Bluesky | atrium-xrpc-client | AT Protocol XRPC通信 |
+| 環境変数 | dotenvy | .env読み込み |
+| エラー | anyhow | シンプルなエラー処理 |
+| シリアライズ | serde / serde_json | JSON変換 |
 
 **Rust Edition**: 2021（安定性優先）
+**必要なRustバージョン**: 1.85以降（atrium-xrpc-client 0.5が必要）
 
 ---
 
@@ -71,11 +74,21 @@ social-cli/
 ## コマンド
 
 ```bash
-# 投稿
+# 投稿（開発モード）
 cargo run -- post -m "メッセージ"
+
+# 投稿（リリースビルド）
+cargo build --release
+./target/release/social-cli post -m "メッセージ"
 
 # ヘルプ
 cargo run -- --help
+```
+
+**出力例**:
+```
+✓ Posted successfully!
+View your post: https://bsky.app/profile/user.bsky.social/post/abc123xyz
 ```
 
 ---
@@ -129,12 +142,22 @@ BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 
 ### ビルドエラー
 
-```bash
-# Rustを最新に更新
-rustup update stable
+**`edition2024` is required エラーが出る場合**:
 
+```bash
+# Rustを最新に更新（1.85以降が必要）
+rustup update
+
+# Rustのバージョン確認
+rustc --version
+```
+
+**依存関係のエラーが出る場合**:
+
+```bash
 # 依存関係を再取得
 cargo clean
+rm -f Cargo.lock
 cargo build
 ```
 
@@ -143,6 +166,11 @@ cargo build
 - `.env`ファイルが存在するか確認
 - App Password（通常パスワードではない）を使用
 - Bluesky設定でApp Passwordが削除されていないか確認
+- `.env`ファイルのパーミッションを確認
+
+```bash
+chmod 600 .env
+```
 
 詳細は [docs/usage.md](docs/usage.md) を参照。
 

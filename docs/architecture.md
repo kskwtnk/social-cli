@@ -70,12 +70,20 @@ graph TD
 
 ## モジュール設計
 
-### 1. エントリーポイント (src/main.rs)
+### 1. エントリーポイント (src/main.rs) - MVP実装
 
 **役割**: CLIパーサーとサブコマンドルーティング
 
+**現在の実装**:
 ```rust
+use clap::{Parser, Subcommand};
+use anyhow::Result;
+
+mod bluesky;
+
 #[derive(Parser)]
+#[command(name = "social-cli")]
+#[command(about = "Multi-platform social media posting CLI tool")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -83,73 +91,147 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Setup(SetupArgs),
-    Post(PostArgs),
-    Status(StatusArgs),
+    /// Post a message to Bluesky
+    Post {
+        /// Message to post
+        #[arg(short, long)]
+        message: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file
+    dotenvy::dotenv().ok();
+
     let cli = Cli::parse();
+
     match cli.command {
-        Commands::Setup(args) => commands::setup::run(args).await,
-        Commands::Post(args) => commands::post::run(args).await,
-        Commands::Status(args) => commands::status::run(args).await,
+        Commands::Post { message } => {
+            let post_url = bluesky::post(&message).await?;
+            println!("✓ Posted successfully!");
+            println!("View your post: {}", post_url);
+            Ok(())
+        }
     }
 }
 ```
 
-**依存**: clap, tokio
+**依存**: clap, tokio, anyhow, dotenvy
 
----
-
-### 2. エラー処理 (src/error.rs)
-
-**役割**: カスタムエラー型定義と変換
-
+**Phase 2以降の拡張予定**:
 ```rust
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum SocialCliError {
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
-
-    #[error("Authentication error: {0}")]
-    AuthError(String),
-
-    #[error("API error ({platform}): {message}")]
-    ApiError {
-        platform: String,
-        message: String,
-    },
-
-    #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
-
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-
-    #[error("Keyring error: {0}")]
-    KeyringError(#[from] keyring::Error),
+#[derive(Subcommand)]
+enum Commands {
+    Setup(SetupArgs),
+    Post(PostArgs),
+    Status(StatusArgs),
 }
-
-pub type Result<T> = std::result::Result<T, SocialCliError>;
 ```
 
-**設計原則**:
-- すべてのエラーは`SocialCliError`に変換
-- `thiserror`でボイラープレート削減
-- `From` traitで自動変換
+---
+
+### 2. エラー処理 - MVP実装
+
+**役割**: シンプルなエラーハンドリング
+
+**現在の実装**:
+- `anyhow::Result<T>` を使用
+- `.context()`でエラーメッセージを追加
+- `?`演算子で簡潔にエラー伝播
+
+**例**:
+```rust
+use anyhow::{Context, Result};
+
+let identifier = env::var("BLUESKY_IDENTIFIER")
+    .context("BLUESKY_IDENTIFIER not set in .env file")?;
+```
+
+**Phase 2以降の拡張予定**:
+- `thiserror`を使ったカスタムエラー型
+- プラットフォーム固有のエラー処理
+- より詳細なエラー分類
 
 ---
 
-### 3. 設定管理 (src/config.rs)
+### 3. Blueskyモジュール (src/bluesky.rs) - MVP実装
 
-**役割**: 設定ファイルの読み書き
+**役割**: Bluesky投稿機能
+
+**現在の実装**:
+```rust
+use anyhow::{Context, Result};
+use atrium_api::agent::AtpAgent;
+use atrium_api::types::string::{AtIdentifier, Datetime};
+use atrium_api::types::Unknown;
+use atrium_xrpc_client::reqwest::ReqwestClient;
+use std::env;
+
+/// Post a message to Bluesky
+/// Returns the URL of the created post
+pub async fn post(message: &str) -> Result<String> {
+    // 環境変数から認証情報を取得
+    let identifier = env::var("BLUESKY_IDENTIFIER")
+        .context("BLUESKY_IDENTIFIER not set in .env file")?;
+    let password = env::var("BLUESKY_APP_PASSWORD")
+        .context("BLUESKY_APP_PASSWORD not set in .env file")?;
+
+    // AtpAgentを作成
+    let agent = AtpAgent::new(
+        ReqwestClient::new("https://bsky.social"),
+        atrium_api::agent::store::MemorySessionStore::default(),
+    );
+
+    // ログインしてセッション取得
+    let session = agent
+        .login(&identifier, &password)
+        .await
+        .context("Failed to authenticate with Bluesky")?;
+
+    // 投稿レコードを作成
+    let record = atrium_api::app::bsky::feed::post::RecordData {
+        created_at: Datetime::now(),
+        text: message.to_string(),
+        // その他のフィールドは None
+        embed: None,
+        // ...
+    };
+
+    // Unknown型に変換
+    let record_unknown: Unknown =
+        serde_json::from_value(serde_json::to_value(&record)?)?;
+
+    // 投稿を作成
+    let response = agent.api.com.atproto.repo.create_record(
+        // InputDataの作成
+    ).await?;
+
+    // URLを構築して返す
+    let rkey = response.uri.split('/').last()
+        .context("Failed to extract rkey")?;
+    let post_url = format!(
+        "https://bsky.app/profile/{}/post/{}",
+        session.handle.as_ref(),
+        rkey
+    );
+
+    Ok(post_url)
+}
+```
+
+**依存**: atrium-api, atrium-xrpc-client, serde_json, anyhow
+
+**設計のポイント**:
+- シンプルな関数1つで完結
+- エラーは`.context()`で詳細を追加
+- 投稿URLを返して、ユーザーがすぐ確認できる
+
+---
+
+### 4. 設定管理 (Phase 2以降)
+
+**役割**: 設定ファイルの読み書き（Phase 2以降で実装予定）
 
 ```rust
 use serde::{Deserialize, Serialize};
