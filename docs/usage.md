@@ -1,656 +1,280 @@
 # 使用方法
 
-**重要**: このドキュメントは、**現在の使い方と将来の拡張計画**を示しています。Phase 1-3の基本機能は実装済みで、Phase 4以降の機能は計画段階です。
-
 ## 実装状況
 
-| 機能 | Phase 1-3 (実装済み) | Phase 4以降 |
-|------|---------------------|------------|
-| Bluesky投稿 (`bluesky -m`) | ✅ **実装済み** | - |
-| X投稿 (`x -m`) | ✅ **実装済み** | - |
-| Threads投稿 (`threads -m`) | ✅ **実装済み** | - |
-| 投稿URLの表示 | ✅ **実装済み** | - |
-| 複数SNS同時投稿 | - | ⏳ 計画中 |
-| `setup` コマンド | - | ⏳ 計画中 |
-| `status` コマンド | - | ⏳ 計画中 |
-| 設定ファイル管理 | - | ⏳ 計画中 |
+| 機能 | 状態 |
+|------|------|
+| Bluesky投稿 | ✅ 実装済み (Phase 1) |
+| X (Twitter) 投稿 | ✅ 実装済み (Phase 2) |
+| Threads投稿 | ✅ 実装済み (Phase 3) |
+| 全SNS一斉投稿 | ✅ 実装済み (Phase 4) |
+| 個別エラーハンドリング | ✅ 実装済み (Phase 4) |
+| cargo postエイリアス | ✅ 実装済み (Phase 4) |
+| 投稿URLの自動表示 | ✅ 実装済み |
 
-**現在の使い方（Phase 1-3）**:
+---
+
+## クイックスタート
+
 ```bash
-# .env ファイルを設定（手動）
+# 1. 環境設定
 cp .env.example .env
-nano .env  # Bluesky、X、Threadsの認証情報を入力
+# .envを編集してBluesky/X/Threads認証情報を設定
 
-# Blueskyに投稿
-cargo run -- bluesky -m "Hello, Bluesky!"
+# 2. ビルド
+cargo build
 
-# 出力:
-# ✓ Posted to Bluesky successfully!
-# View your post: https://bsky.app/profile/user.bsky.social/post/abc123
+# 3. 全SNSに一斉投稿
+cargo post -m "Hello from Rust!"
 
-# Xに投稿
-cargo run -- x -m "Hello, X!"
-
-# 出力:
-# ✓ Posted to X successfully!
-# View your tweet: https://x.com/i/web/status/1234567890123456789
-
-# Threadsに投稿
-cargo run -- threads -m "Hello, Threads!"
-
-# 出力:
-# ✓ Posted to Threads successfully!
-# View your thread: https://www.threads.net/@user_id/post/abc123xyz
+# または、個別SNSに投稿
+cargo post bluesky -m "Bluesky only"
+cargo post x -m "X only"
+cargo post threads -m "Threads only"
 ```
-
-以下は、将来の拡張機能（Phase 4以降）の理想的な使い方を示しています。
 
 ---
 
-## コマンドリファレンス（将来の完成形）
+## コマンドリファレンス
 
-Social CLIは3つの主要コマンドで構成される予定です。
+### 全SNSに一斉投稿
+
+サブコマンドを指定しない場合、全てのSNS（Bluesky、X、Threads）に同時投稿します。
+
+```bash
+# 開発モード
+cargo post -m "メッセージ"
+
+# リリースビルド
+./target/release/social-cli -m "メッセージ"
+```
+
+**出力例**:
+```
+Posting to all platforms...
+
+✓ Posted to Bluesky successfully!
+  https://bsky.app/profile/user.bsky.social/post/abc123xyz
+✓ Posted to X successfully!
+  https://x.com/i/web/status/1234567890123456789
+✓ Posted to Threads successfully!
+  https://www.threads.com/@username/post/abc123xyz
+
+Posting complete!
+```
+
+**特徴**:
+- 1つのSNSが失敗しても他のSNSへの投稿は継続
+- 各SNSの投稿URLが個別に表示される
+- エラーが発生した場合も詳細が表示される
 
 ---
 
-## `social-cli setup` (Phase 4以降)
+### 個別SNSに投稿
 
-**注意**: このコマンドはPhase 4以降で実装予定です。Phase 1-3では `.env` ファイルを手動編集します。
+特定のSNSのみに投稿したい場合は、サブコマンドを指定します。
 
-初期設定を行うコマンドです。
-
-### 基本的な使い方
+#### Blueskyのみに投稿
 
 ```bash
-social-cli setup
+cargo post bluesky -m "Bluesky専用の投稿"
 ```
 
-### 対話形式でのセットアップ
-
+**出力例**:
 ```
-Social CLI Setup
-================
-
-Bluesky Setup
--------------
-Bluesky Handle or Email: your-handle.bsky.social
-App Password: ****************
-✓ Bluesky configured successfully
-
-✓ Configuration saved successfully!
+✓ Posted to Bluesky successfully!
+View your post: https://bsky.app/profile/user.bsky.social/post/abc123xyz
 ```
 
-### 特定のプラットフォームのみ設定
+#### X (Twitter) のみに投稿
 
 ```bash
-# Blueskyのみ
-social-cli setup --platform bluesky
-
-# Twitter/Xのみ（Phase 2）
-social-cli setup --platform twitter
+cargo post x -m "X専用の投稿"
 ```
 
-### セットアップの流れ
-
-1. **ハンドル/メールアドレス入力**
-   - Blueskyのハンドル（例: `user.bsky.social`）
-   - またはメールアドレス
-
-2. **App Password入力**
-   - Bluesky設定で生成したApp Passwordを入力
-   - 入力中は非表示（セキュリティのため）
-
-3. **認証確認**
-   - 入力した認証情報でBlueskyに接続テスト
-   - 成功したら設定を保存
-
-4. **保存先**
-   - 設定: `~/.config/social-cli/config.toml`
-   - パスワード: OSキーチェーン
-
-### エラー時の対処
-
-#### 認証エラー
-
+**出力例**:
 ```
-✗ Authentication failed: Invalid credentials
+✓ Posted to X successfully!
+View your tweet: https://x.com/i/web/status/1234567890123456789
 ```
 
-**対処法**:
-- App Passwordが正しいか確認
-- ハンドルが正しいか確認
-- App Passwordが削除されていないか確認
+#### Threadsのみに投稿
 
-#### ネットワークエラー
-
-```
-✗ Network error: Connection timeout
+```bash
+cargo post threads -m "Threads専用の投稿"
 ```
 
-**対処法**:
-- インターネット接続を確認
-- Blueskyがダウンしていないか確認
+**出力例**:
+```
+✓ Posted to Threads successfully!
+View your thread: https://www.threads.com/@username/post/abc123xyz
+```
 
 ---
 
-## `social-cli post`
+## オプション
 
-SNSに投稿するコマンドです。
+| オプション | 短縮形 | 説明 | 必須 |
+|-----------|--------|------|------|
+| `--message` | `-m` | 投稿メッセージ | ✅ |
 
-**MVP (Phase 1)での実装**:
-- ✅ Blueskyへの投稿のみサポート
-- ✅ `-m` オプションでメッセージ指定
-- ❌ `-p` オプション（プラットフォーム選択）は未実装
+### サブコマンド
 
-### 基本的な使い方
+| サブコマンド | 説明 |
+|-------------|------|
+| (無し) | 全SNSに一斉投稿 |
+| `bluesky` | Blueskyのみに投稿 |
+| `x` | X (Twitter) のみに投稿 |
+| `threads` | Threadsのみに投稿 |
 
-```bash
-# MVP (Phase 1): Blueskyに投稿
-cargo run -- post -m "Hello, world!"
+---
 
-# Phase 2以降: 全SNSに投稿
-social-cli post -m "Hello, world!"
-```
+## 使用例
 
-### オプション
-
-| オプション | 短縮形 | 説明 | デフォルト | 実装状況 |
-|-----------|--------|------|-----------|---------|
-| `--message` | `-m` | 投稿メッセージ（必須） | - | ✅ Phase 1 |
-| `--platform` | `-p` | 投稿先プラットフォーム | `all` | ⏳ Phase 2 |
-
-### 使用例
-
-#### MVP (Phase 1): Blueskyに投稿
+### 1. 全SNSに同じメッセージを投稿
 
 ```bash
-# 開発中
-cargo run -- post -m "新機能をリリースしました！"
-
-# ビルド後
-./target/release/social-cli post -m "新機能をリリースしました！"
+cargo post -m "新機能をリリースしました！"
 ```
 
-**実際の出力**:
-
-```
-✓ Posted successfully!
-View your post: https://bsky.app/profile/user.bsky.social/post/3kh5rxg4xd22p
-```
-
-投稿URLをクリックするとブラウザでBlueskyの投稿を確認できます。
-
-#### Phase 2以降: 全SNSに投稿
+### 2. 複数行メッセージ
 
 ```bash
-social-cli post -m "新機能をリリースしました！"
-```
-
-出力例:
-
-```
-Posting to 3 platform(s)...
-
-✓ Bluesky - Posted successfully
-  URL: https://bsky.app/profile/user.bsky.social/post/abc123
-
-✓ X - Posted successfully
-  URL: https://twitter.com/username/status/123456789
-
-✓ Threads - Posted successfully
-  URL: https://threads.net/@username/post/xyz789
-
-Summary: 3/3 posts succeeded
-```
-
-#### 特定のプラットフォームのみに投稿（Phase 2以降）
-
-```bash
-# Blueskyのみ
-social-cli post -p bluesky -m "Bluesky専用の投稿"
-
-# Twitter/Xのみ
-social-cli post -p twitter -m "X専用の投稿"
-```
-
-#### 長いメッセージ
-
-```bash
-social-cli post -m "これは長いメッセージです。
-複数行にわたる投稿も可能です。
+cargo post -m "これは複数行の
+メッセージです。
 改行も含められます。"
 ```
 
-### 投稿結果の見方
-
-#### 成功した場合
-
-```
-✓ Bluesky - Posted successfully
-  URL: https://bsky.app/profile/user.bsky.social/post/abc123
-```
-
-- ✓: 成功マーク
-- URL: 投稿へのリンク（ブラウザで開けます）
-
-#### 失敗した場合
-
-```
-✗ Bluesky - Failed: Network error: Connection timeout
-```
-
-- ✗: 失敗マーク
-- エラーメッセージが表示されます
-
-#### 部分的に失敗した場合
-
-```
-Posting to 2 platform(s)...
-
-✓ Bluesky - Posted successfully
-  URL: https://bsky.app/profile/user.bsky.social/post/abc123
-
-✗ Twitter - Failed: Authentication error: Invalid token
-
-Summary: 1/2 posts succeeded
-```
-
-- 成功したプラットフォームと失敗したプラットフォームが個別に表示
-- サマリーで全体の結果を確認
-
-### 文字数制限
-
-各プラットフォームの文字数制限:
-
-| プラットフォーム | 最大文字数 |
-|----------------|-----------|
-| Bluesky | 300文字 |
-| Twitter/X | 280文字（無料）/ 4,000文字（Premium） |
-| Threads | 500文字 |
-
-**注意**: 制限を超える場合はエラーになります。
-
-### エラー時の対処
-
-#### 未設定エラー
-
-```
-✗ Error: No platforms configured. Run 'social-cli setup' first.
-```
-
-**対処法**: `social-cli setup`で設定を行う
-
-#### 認証エラー
-
-```
-✗ Bluesky - Failed: Authentication error: Session expired
-```
-
-**対処法**: `social-cli setup`で再度認証
-
-#### ネットワークエラー
-
-```
-✗ Bluesky - Failed: Network error: Connection refused
-```
-
-**対処法**:
-- インターネット接続を確認
-- しばらく待ってから再試行
-
----
-
-## `social-cli status` (Phase 2以降)
-
-**注意**: このコマンドはPhase 2以降で実装予定です。MVP (Phase 1)では未実装です。
-
-現在の設定状態を確認するコマンドです。
-
-### 基本的な使い方
+### 3. リリースビルド使用
 
 ```bash
-social-cli status
+# ビルド
+cargo build --release
+
+# 全SNSに投稿
+./target/release/social-cli -m "本番環境からの投稿"
+
+# 個別SNSに投稿
+./target/release/social-cli bluesky -m "Blueskyのみ"
 ```
 
-### 出力例
-
-```
-Social CLI Configuration Status
-================================
-
-Bluesky:
-  Status: ✓ Enabled
-  Handle: user.bsky.social
-
-Twitter:
-  Status: ✗ Not configured
-
-Threads:
-  Status: ✗ Not configured
-```
-
-### 情報の見方
-
-#### 設定済みのプラットフォーム
-
-```
-Bluesky:
-  Status: ✓ Enabled
-  Handle: user.bsky.social
-```
-
-- ✓ Enabled: 設定済みで利用可能
-- Handle: 登録されているハンドル
-
-#### 未設定のプラットフォーム
-
-```
-Twitter:
-  Status: ✗ Not configured
-```
-
-- ✗ Not configured: 未設定
-
-#### 無効化されているプラットフォーム
-
-```
-Twitter:
-  Status: ✗ Disabled
-  API Tier: Basic
-```
-
-- ✗ Disabled: 設定されているが無効化されている
-
-### 使用場面
-
-- セットアップ後の確認
-- トラブルシューティング時の設定確認
-- 複数アカウント管理時の確認（Phase 3以降）
-
----
-
-## 実践的な使用例
-
-### 1. 初回セットアップから投稿まで
-
-```bash
-# 1. セットアップ
-$ social-cli setup
-Bluesky Handle or Email: user.bsky.social
-App Password: ****************
-✓ Configuration saved successfully!
-
-# 2. 設定確認
-$ social-cli status
-Social CLI Configuration Status
-================================
-Bluesky:
-  Status: ✓ Enabled
-  Handle: user.bsky.social
-
-# 3. 投稿
-$ social-cli post -m "Hello from social-cli!"
-Posting to 1 platform(s)...
-✓ Bluesky - Posted successfully
-  URL: https://bsky.app/profile/user.bsky.social/post/xyz789
-Summary: 1/1 posts succeeded
-```
-
-### 2. シェルスクリプトでの自動投稿
+### 4. シェルスクリプトでの自動投稿
 
 ```bash
 #!/bin/bash
 # daily-update.sh
 
 MESSAGE="$(date '+%Y年%m月%d日')の定期投稿です"
-social-cli post -m "$MESSAGE"
+cargo post -m "$MESSAGE"
 ```
 
-### 3. エイリアス設定
-
-`~/.bashrc` または `~/.zshrc`:
-
-```bash
-# 短縮エイリアス
-alias sp='social-cli post -m'
-alias ss='social-cli status'
-
-# 使用例
-sp "投稿内容"
-```
-
-### 4. ファイルから投稿
+### 5. ファイルから投稿
 
 ```bash
 # message.txtの内容を投稿
-social-cli post -m "$(cat message.txt)"
-```
-
-### 5. パイプラインでの使用
-
-```bash
-# 他のコマンドの出力を投稿
-echo "ビルドが完了しました" | xargs -I {} social-cli post -m "{}"
-
-# git logから最新コミットを投稿
-git log -1 --pretty=format:"%s" | xargs -I {} social-cli post -m "最新コミット: {}"
+cargo post -m "$(cat message.txt)"
 ```
 
 ---
 
-## 高度な使い方
+## エラーハンドリング
 
-### 環境変数での設定
+### 全SNS投稿時のエラー
 
-#### デバッグモード
+一部のSNSで失敗しても、他のSNSへの投稿は継続されます。
 
-```bash
-# 詳細なログ出力
-RUST_LOG=debug social-cli post -m "Test"
+**出力例（一部失敗）**:
+```
+Posting to all platforms...
+
+✓ Posted to Bluesky successfully!
+  https://bsky.app/profile/user.bsky.social/post/abc123xyz
+✗ Failed to post to X: Network error: Connection timeout
+✓ Posted to Threads successfully!
+  https://www.threads.com/@username/post/abc123xyz
+
+Posting complete!
 ```
 
-#### カスタム設定パス
+### 個別SNS投稿時のエラー
 
-```bash
-# 異なる設定ファイルを使用
-SOCIAL_CLI_CONFIG_DIR=/path/to/config social-cli status
+エラーが発生すると、詳細なエラーメッセージが表示されます。
+
+**出力例（認証エラー）**:
+```
+Error: BLUESKY_IDENTIFIER not set in .env file
 ```
 
-### JSON出力（将来実装予定）
+---
 
-```bash
-# 機械可読形式で出力
-social-cli post -m "Test" --output json
-```
+## 文字数制限
 
-### ドライラン（将来実装予定）
+各プラットフォームの文字数制限:
 
-```bash
-# 実際には投稿せず、動作確認のみ
-social-cli post -m "Test" --dry-run
-```
+| プラットフォーム | 最大文字数 |
+|----------------|-----------|
+| Bluesky | 300文字 |
+| X (Twitter) | 280文字（無料）/ 4,000文字（Premium） |
+| Threads | 500文字 |
+
+**注意**: 制限を超える場合は各プラットフォームでエラーになります。
 
 ---
 
 ## トラブルシューティング
 
-### よくある問題と解決策
+### 実行時エラー
 
-#### 1. "command not found: social-cli"
+**認証エラー**:
+`Error: ... not set in .env file` や認証失敗に関するエラーが表示された場合、`.env`ファイルの認証情報が正しく設定されていない可能性があります。
+詳細な設定方法とトラブルシューティングについては、[セットアップガイド](setup.md)のトラブルシューティングのセクションを参照してください。
 
-**原因**: パスが通っていない
+**ネットワークエラー**:
+`Error: Network error: Connection timeout` のようなエラーが表示された場合は、以下を確認してください。
+- インターネット接続
+- 各SNSプラットフォームの障害情報（ステータスページなど）
+- ファイアウォール等のネットワーク設定
 
-**解決策**:
+**文字数制限超過**:
+各SNSの文字数制限を超えて投稿しようとするとエラーになります。メッセージの長さを確認してください。
 
+### ビルドエラー
+
+**`edition2024` is required エラー**:
+このエラーは、Rustのバージョンが古い場合に発生します。以下のコマンドでRustを更新してください。
 ```bash
-# cargo installした場合
-export PATH="$HOME/.cargo/bin:$PATH"
+# Rustを最新に更新（1.85以降が必要）
+rustup update
 
-# またはフルパスで実行
-~/Repositories/social-cli/target/release/social-cli
+# Rustのバージョン確認
+rustc --version
 ```
 
-#### 2. "No platforms configured"
-
-**原因**: セットアップが完了していない
-
-**解決策**:
-
+**依存関係のエラー**:
+ビルド時に依存関係に関する問題が発生した場合は、以下のコマンドでクリーンアップと再ビルドを試してください。
 ```bash
-social-cli setup
-```
-
-#### 3. "Authentication error: Invalid credentials"
-
-**原因**:
-- App Passwordが間違っている
-- App Passwordが削除された
-- セッションが期限切れ
-
-**解決策**:
-
-```bash
-# 再セットアップ
-social-cli setup
-```
-
-#### 4. "Post failed: Message too long"
-
-**原因**: 文字数制限を超えている
-
-**解決策**:
-
-```bash
-# メッセージを短くする
-# または、プラットフォームごとに分ける（Phase 2以降）
-social-cli post -p bluesky -m "短いメッセージ（300文字以内）"
-```
-
-#### 5. キーチェーンアクセスエラー (macOS)
-
-**原因**: キーチェーンへのアクセス許可がない
-
-**解決策**:
-
-- ダイアログで "Always Allow" を選択
-- または、Keychain Accessアプリで手動で許可
-
-#### 6. Secret Serviceエラー (Linux)
-
-**原因**: GNOME Keyringが起動していない
-
-**解決策**:
-
-```bash
-# GNOME Keyringを起動
-gnome-keyring-daemon --start --components=secrets
-
-# または、環境変数を設定
-eval $(gnome-keyring-daemon --start)
-export SSH_AUTH_SOCK
-```
-
-### デバッグ手順
-
-```bash
-# 1. 設定確認
-social-cli status
-
-# 2. 詳細ログで実行
-RUST_LOG=debug social-cli post -m "Test"
-
-# 3. 設定ファイルの確認
-cat ~/.config/social-cli/config.toml
-
-# 4. 再セットアップ
-social-cli setup
+# 依存関係を再取得
+cargo clean
+rm -f Cargo.lock # 注意: 依存バージョンが更新される可能性があります
+cargo build
 ```
 
 ---
 
-## ベストプラクティス
-
-### セキュリティ
-
-1. **App Passwordを共有しない**
-   - 各デバイス/アプリごとに個別のApp Passwordを生成
-   - 不要になったら削除
-
-2. **設定ファイルのバックアップ**
-   - キーチェーンの情報は含まれないため安全
-   ```bash
-   cp ~/.config/social-cli/config.toml ~/backup/
-   ```
-
-3. **定期的なApp Passwordの更新**
-   - セキュリティのため、3-6ヶ月ごとに更新
-
-### 効率的な使い方
-
-1. **エイリアスの活用**
-   ```bash
-   alias post='social-cli post -m'
-   ```
-
-2. **テンプレートの使用**
-   ```bash
-   # template.txt
-   今日の進捗:
-   - {task1}
-   - {task2}
-
-   # 使用時
-   cat template.txt | sed "s/{task1}/実装完了/g" | \
-     sed "s/{task2}/テスト中/g" | \
-     xargs -I {} social-cli post -m "{}"
-   ```
-
-3. **シェルスクリプトでの自動化**
-   - 定期投稿
-   - ビルド成功/失敗の通知
-   - デプロイ完了通知
-
----
-
-## FAQ
-
-### Q: 投稿を削除できますか？
-
-A: Phase 1では未対応です。削除は各プラットフォームのWebインターフェースから行ってください。
-
-### Q: 画像を投稿できますか？
-
-A: Phase 1では未対応です。Phase 3以降で実装予定です。
-
-### Q: 複数アカウントを管理できますか？
-
-A: Phase 1では1アカウントのみ。Phase 3で複数アカウント対応予定です。
-
-### Q: 投稿の予約はできますか？
-
-A: 未対応です。cronやタスクスケジューラーと組み合わせて実現可能です：
+## ヘルプの表示
 
 ```bash
-# crontabで毎日9時に投稿
-0 9 * * * /usr/local/bin/social-cli post -m "おはようございます"
+# 全体のヘルプ
+cargo post --help
+
+# サブコマンドのヘルプ
+cargo post bluesky --help
 ```
-
-### Q: Windows PowerShellで使えますか？
-
-A: はい、使えます：
-
-```powershell
-social-cli post -m "Test from PowerShell"
-```
-
-### Q: 投稿履歴を確認できますか？
-
-A: Phase 1では未対応です。Phase 3で実装予定です。
 
 ---
 
 ## 次のステップ
 
-- [api-integration.md](api-integration.md) - API統合の詳細
+- [setup.md](setup.md) - 環境構築の詳細ガイド
 - [security.md](security.md) - セキュリティのベストプラクティス
-- [setup.md](setup.md) - セットアップガイド
+- [architecture.md](architecture.md) - システム設計とモジュール構成

@@ -2,27 +2,41 @@
 
 ## 概要
 
-Social CLIは、プラットフォーム抽象化レイヤーを中心とした、拡張可能なアーキテクチャを採用しています。
+Social CLIは、シンプルで拡張可能なアーキテクチャを採用した、Rust製のマルチSNS投稿CLIツールです。
+
+**実装済み機能**:
+- Bluesky、X (Twitter)、Threads の3つのSNSをサポート
+- 全SNS一斉投稿機能
+- 個別SNS投稿機能
+- 個別エラーハンドリング（1つ失敗しても他は継続）
+- `.env`ファイルによる認証情報管理
 
 ---
 
-## システムアーキテクチャ図（Phase 1-3 実装済み）
+## システムアーキテクチャ図
 
 ```mermaid
 graph TD
     User[User / CLI] --> Main[src/main.rs<br/>CLIパーサー: clap]
 
+    Main --> AllCmd[一斉投稿<br/>サブコマンド無し]
     Main --> BlueskyCmd[bluesky コマンド]
     Main --> XCmd[x コマンド]
     Main --> ThreadsCmd[threads コマンド]
 
-    BlueskyCmd --> Env[.env ファイル]
+    AllCmd --> Env[.env ファイル]
+    BlueskyCmd --> Env
     XCmd --> Env
     ThreadsCmd --> Env
 
-    BlueskyCmd --> BlueskyMod[src/bluesky.rs<br/>Bluesky投稿ロジック]
-    XCmd --> XMod[src/x.rs<br/>X投稿ロジック]
-    ThreadsCmd --> ThreadsMod[src/threads.rs<br/>Threads投稿ロジック]
+    AllCmd --> AllLogic[並列投稿ロジック]
+    BlueskyCmd --> BlueskyMod[src/bluesky.rs]
+    XCmd --> XMod[src/x.rs]
+    ThreadsCmd --> ThreadsMod[src/threads.rs]
+
+    AllLogic --> BlueskyMod
+    AllLogic --> XMod
+    AllLogic --> ThreadsMod
 
     BlueskyMod --> AtriumAPI[atrium-api<br/>Bluesky API Client]
     XMod --> OAuth1[reqwest-oauth1<br/>OAuth 1.0a署名]
@@ -38,6 +52,7 @@ graph TD
 
     style User fill:#e1f5ff
     style Main fill:#fff4e1
+    style AllLogic fill:#ffe1f0
     style BlueskyMod fill:#e8f5e9
     style XMod fill:#e3f2fd
     style ThreadsMod fill:#f3e5f5
@@ -47,721 +62,169 @@ graph TD
     style ThreadsAPI fill:#fce4ec
 ```
 
-**Phase 1-3 構成の特徴**:
-- 4ファイル構成（main.rs + bluesky.rs + x.rs + threads.rs）
-- .env ファイルで認証情報管理
-- Bluesky、X (Twitter)、Threadsの3つのSNSをサポート
-- 個別のサブコマンド（`bluesky`, `x`, `threads`）で投稿先を選択
+**現在の構成の特徴**:
+- 5ファイル構成（main.rs + bluesky.rs + x.rs + threads.rs + .cargo/config.toml）
+- `.env`ファイルで認証情報管理
+- 並列投稿による高速処理
+- 個別エラーハンドリングによる堅牢性
 
-### 将来のアーキテクチャ（Phase 4以降）
+---
 
-```mermaid
-graph TD
-    User[User / CLI] --> Main[src/main.rs]
+## ファイル構成
 
-    Main --> Setup[setup コマンド]
-    Main --> Post[post コマンド]
-    Main --> Status[status コマンド]
-
-    Setup --> Config[config.rs<br/>設定管理]
-    Post --> Config
-    Status --> Config
-
-    Config --> Env[.env または<br/>OS Keychain]
-
-    Post --> Trait[SocialPlatform Trait]
-
-    Trait --> BlueskyImpl[platforms/bluesky.rs]
-    Trait --> TwitterImpl[platforms/twitter.rs]
-    Trait --> ThreadsImpl[platforms/threads.rs]
-
-    BlueskyImpl --> BlueskyAPI[Bluesky API]
-    TwitterImpl --> TwitterAPI[X API]
-    ThreadsImpl --> ThreadsAPI[Threads API]
-
-    style User fill:#e1f5ff
-    style Trait fill:#fff9c4
-    style Env fill:#ffe1e1
+```
+social-cli/
+├── .cargo/
+│   └── config.toml          # cargo postエイリアス設定
+├── .env                     # 認証情報（git無視）
+├── .env.example             # 認証情報テンプレート
+├── .gitignore
+├── Cargo.toml               # 依存関係定義
+├── CLAUDE.md                # プロジェクト概要
+├── src/
+│   ├── main.rs              # CLIエントリーポイント
+│   ├── bluesky.rs           # Bluesky投稿ロジック
+│   ├── x.rs                 # X (Twitter) 投稿ロジック
+│   └── threads.rs           # Threads投稿ロジック
+└── docs/                    # ドキュメント
+    ├── architecture.md      # このファイル
+    ├── setup.md
+    ├── usage.md
+    └── security.md
 ```
 
 ---
 
 ## モジュール設計
 
-### 1. エントリーポイント (src/main.rs) - Phase 1-2 実装
+### 1. エントリーポイント (src/main.rs)
 
-**役割**: CLIパーサーとサブコマンドルーティング
+**役割**: CLIパーサーとルーティング
 
-**現在の実装**:
+**主要な機能**:
+- `clap`による引数パーサー
+- サブコマンドごとの処理分岐
+- 全SNS一斉投稿の並列実行
+- エラーハンドリング
+
+**コマンド構造**:
 ```rust
-use clap::{Parser, Subcommand};
-use anyhow::Result;
-
-mod bluesky;
-mod threads;
-mod x;
-
-#[derive(Parser)]
-#[command(name = "social-cli")]
-#[command(about = "Multi-platform social media posting CLI tool")]
 struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Post a message to Bluesky
-    Bluesky {
-        #[arg(short, long)]
-        message: String,
-    },
-    /// Post a message to X (Twitter)
-    X {
-        #[arg(short, long)]
-        message: String,
-    },
-    /// Post a message to Threads
-    Threads {
-        #[arg(short, long)]
-        message: String,
-    },
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Bluesky { message } => {
-            let post_url = bluesky::post(&message).await?;
-            println!("✓ Posted to Bluesky successfully!");
-            println!("View your post: {}", post_url);
-            Ok(())
-        }
-        Commands::X { message } => {
-            let post_url = x::post(&message).await?;
-            println!("✓ Posted to X successfully!");
-            println!("View your tweet: {}", post_url);
-            Ok(())
-        }
-        Commands::Threads { message } => {
-            let post_url = threads::post(&message).await?;
-            println!("✓ Posted to Threads successfully!");
-            println!("View your thread: {}", post_url);
-            Ok(())
-        }
-    }
+    message: Option<String>,  // サブコマンド無しの場合のメッセージ
+    command: Option<Commands>, // サブコマンド（bluesky, x, threads）
 }
 ```
+
+**一斉投稿フロー**:
+1. `.env`から認証情報を読み込み
+2. 各SNSの`post()`関数を並列実行
+3. 各結果を個別に処理（成功/失敗を表示）
+4. すべての投稿が完了したら終了
+
+**エラーハンドリング**:
+- 個別SNSのエラーは`match`で捕捉
+- 1つのSNSが失敗しても他のSNSへの投稿は継続
+- エラーメッセージは`✗`マークで表示
 
 **依存**: clap, tokio, anyhow, dotenvy
 
-**Phase 4以降の拡張予定**:
-```rust
-#[derive(Subcommand)]
-enum Commands {
-    Setup(SetupArgs),
-    Post(PostArgs),      // 複数SNS同時投稿
-    Status(StatusArgs),
-    Bluesky(BlueskyArgs),
-    X(XArgs),
-    Threads(ThreadsArgs),
-}
-```
-
 ---
 
-### 2. エラー処理 - MVP実装
-
-**役割**: シンプルなエラーハンドリング
-
-**現在の実装**:
-- `anyhow::Result<T>` を使用
-- `.context()`でエラーメッセージを追加
-- `?`演算子で簡潔にエラー伝播
-
-**例**:
-```rust
-use anyhow::{Context, Result};
-
-let identifier = env::var("BLUESKY_IDENTIFIER")
-    .context("BLUESKY_IDENTIFIER not set in .env file")?;
-```
-
-**Phase 2以降の拡張予定**:
-- `thiserror`を使ったカスタムエラー型
-- プラットフォーム固有のエラー処理
-- より詳細なエラー分類
-
----
-
-### 3. Blueskyモジュール (src/bluesky.rs) - MVP実装
+### 2. Blueskyモジュール (src/bluesky.rs)
 
 **役割**: Bluesky投稿機能
 
-**現在の実装**:
-```rust
-use anyhow::{Context, Result};
-use atrium_api::agent::AtpAgent;
-use atrium_api::types::string::{AtIdentifier, Datetime};
-use atrium_api::types::Unknown;
-use atrium_xrpc_client::reqwest::ReqwestClient;
-use std::env;
+**認証方式**: App Password認証
 
-/// Post a message to Bluesky
-/// Returns the URL of the created post
-pub async fn post(message: &str) -> Result<String> {
-    // 環境変数から認証情報を取得
-    let identifier = env::var("BLUESKY_IDENTIFIER")
-        .context("BLUESKY_IDENTIFIER not set in .env file")?;
-    let password = env::var("BLUESKY_APP_PASSWORD")
-        .context("BLUESKY_APP_PASSWORD not set in .env file")?;
+**投稿フロー**:
+1. 環境変数から`BLUESKY_IDENTIFIER`と`BLUESKY_APP_PASSWORD`を取得
+2. `AtpAgent`を作成し、ログイン
+3. 投稿レコードを作成
+4. `create_record` APIで投稿
+5. 投稿URLを返す
 
-    // AtpAgentを作成
-    let agent = AtpAgent::new(
-        ReqwestClient::new("https://bsky.social"),
-        atrium_api::agent::store::MemorySessionStore::default(),
-    );
+**API**:
+- エンドポイント: `https://bsky.social`
+- プロトコル: AT Protocol (atrium-api)
+- 認証: セッショントークン
 
-    // ログインしてセッション取得
-    let session = agent
-        .login(&identifier, &password)
-        .await
-        .context("Failed to authenticate with Bluesky")?;
-
-    // 投稿レコードを作成
-    let record = atrium_api::app::bsky::feed::post::RecordData {
-        created_at: Datetime::now(),
-        text: message.to_string(),
-        // その他のフィールドは None
-        embed: None,
-        // ...
-    };
-
-    // Unknown型に変換
-    let record_unknown: Unknown =
-        serde_json::from_value(serde_json::to_value(&record)?)?;
-
-    // 投稿を作成
-    let response = agent.api.com.atproto.repo.create_record(
-        // InputDataの作成
-    ).await?;
-
-    // URLを構築して返す
-    let rkey = response.uri.split('/').last()
-        .context("Failed to extract rkey")?;
-    let post_url = format!(
-        "https://bsky.app/profile/{}/post/{}",
-        session.handle.as_ref(),
-        rkey
-    );
-
-    Ok(post_url)
-}
+**投稿URL形式**:
+```
+https://bsky.app/profile/{handle}/post/{rkey}
 ```
 
 **依存**: atrium-api, atrium-xrpc-client, serde_json, anyhow
 
-**設計のポイント**:
-- シンプルな関数1つで完結
-- エラーは`.context()`で詳細を追加
-- 投稿URLを返して、ユーザーがすぐ確認できる
-
 ---
 
-### 4. Xモジュール (src/x.rs) - Phase 2 実装
+### 3. Xモジュール (src/x.rs)
 
 **役割**: X (Twitter) 投稿機能
 
-**現在の実装**:
-```rust
-use anyhow::{Context, Result};
-use reqwest::Client;
-use reqwest_oauth1::{OAuthClientProvider, Secrets};
-use serde_json::json;
-use std::env;
+**認証方式**: OAuth 1.0a
 
-/// Post a message to X (Twitter)
-/// Returns the URL of the created tweet
-pub async fn post(message: &str) -> Result<String> {
-    // 環境変数から認証情報を取得
-    let consumer_key = env::var("X_CONSUMER_KEY")
-        .context("X_CONSUMER_KEY not set in .env file")?;
-    let consumer_secret = env::var("X_CONSUMER_SECRET")
-        .context("X_CONSUMER_SECRET not set in .env file")?;
-    let access_token = env::var("X_ACCESS_TOKEN")
-        .context("X_ACCESS_TOKEN not set in .env file")?;
-    let access_token_secret = env::var("X_ACCESS_TOKEN_SECRET")
-        .context("X_ACCESS_TOKEN_SECRET not set in .env file")?;
+**投稿フロー**:
+1. 環境変数から4つのOAuth認証情報を取得
+   - `X_CONSUMER_KEY`
+   - `X_CONSUMER_SECRET`
+   - `X_ACCESS_TOKEN`
+   - `X_ACCESS_TOKEN_SECRET`
+2. `reqwest-oauth1`で署名付きリクエストを作成
+3. X API v2の`/2/tweets`エンドポイントにPOST
+4. レスポンスからTweet IDを抽出
+5. 投稿URLを返す
 
-    // OAuth1 secretsを作成
-    let secrets = Secrets::new(consumer_key, consumer_secret)
-        .token(access_token, access_token_secret);
+**API**:
+- エンドポイント: `https://api.twitter.com/2/tweets`
+- プロトコル: X API v2
+- 認証: OAuth 1.0a
 
-    // HTTPクライアント作成
-    let client = Client::new();
-
-    // ツイートペイロードを作成
-    let payload = json!({ "text": message });
-    let payload_str = serde_json::to_string(&payload)?;
-
-    // X API v2エンドポイント
-    let url = "https://api.twitter.com/2/tweets";
-
-    // OAuth1署名付きPOSTリクエストを送信
-    let response = client
-        .oauth1(secrets)
-        .post(url)
-        .header("Content-Type", "application/json")
-        .body(payload_str)
-        .send()
-        .await
-        .context("Failed to send request to X API")?;
-
-    // レスポンスをパース
-    let response_json: serde_json::Value = response
-        .json()
-        .await
-        .context("Failed to parse X API response")?;
-
-    // Tweet IDを抽出
-    let tweet_id = response_json
-        .get("data")
-        .and_then(|data| data.get("id"))
-        .and_then(|id| id.as_str())
-        .context("Failed to extract tweet ID")?;
-
-    // URLを構築
-    let tweet_url = format!("https://x.com/i/web/status/{}", tweet_id);
-
-    Ok(tweet_url)
-}
+**投稿URL形式**:
+```
+https://x.com/i/web/status/{tweet_id}
 ```
 
 **依存**: reqwest, reqwest-oauth1, serde_json, anyhow
 
-**設計のポイント**:
-- OAuth 1.0a署名を`reqwest-oauth1`で自動処理
-- X API v2の`/2/tweets`エンドポイントを使用
-- JSONペイロードを手動で文字列化（reqwest-oauth1の制約）
-- レスポンスからTweet IDを抽出してURLを構築
-
-**認証フロー**:
-1. 環境変数から4つのOAuth 1.0a認証情報を取得
-2. `Secrets`オブジェクトを作成
-3. `reqwest`クライアントに`.oauth1()`で署名を追加
-4. X API v2にPOSTリクエスト送信
-
 ---
 
-### 5. Threadsモジュール (src/threads.rs) - Phase 3 実装
+### 4. Threadsモジュール (src/threads.rs)
 
 **役割**: Threads投稿機能
 
-**現在の実装**:
-```rust
-use anyhow::{Context, Result};
-use reqwest::Client;
-use serde::Deserialize;
-use std::env;
+**認証方式**: OAuth 2.0（Meta Graph API）
 
-/// Response from creating a media container
-#[derive(Debug, Deserialize)]
-struct CreateContainerResponse {
-    id: String,
-}
+**投稿フロー（3ステップ）**:
+1. **メディアコンテナ作成**
+   - エンドポイント: `POST /v1.0/{user-id}/threads`
+   - パラメータ: `media_type=TEXT`, `text`, `access_token`
+   - レスポンス: コンテナID
 
-/// Response from publishing a thread
-#[derive(Debug, Deserialize)]
-struct PublishResponse {
-    id: String,
-}
+2. **コンテナ公開**
+   - エンドポイント: `POST /v1.0/{user-id}/threads_publish`
+   - パラメータ: `creation_id`, `access_token`
+   - レスポンス: 投稿ID
 
-/// Post a message to Threads
-/// Returns the URL of the created thread
-pub async fn post(message: &str) -> Result<String> {
-    // 環境変数から認証情報を取得
-    let user_id = env::var("THREADS_USER_ID")
-        .context("THREADS_USER_ID not set in .env file")?;
-    let access_token = env::var("THREADS_ACCESS_TOKEN")
-        .context("THREADS_ACCESS_TOKEN not set in .env file")?;
+3. **パーマリンク取得**
+   - エンドポイント: `GET /v1.0/{post-id}?fields=permalink`
+   - レスポンス: 正しいThreads投稿URL
 
-    let client = Client::new();
+**API**:
+- ベースURL: `https://graph.threads.net/v1.0`
+- プロトコル: Meta Graph API
+- 認証: User ID + Access Token
 
-    // Step 1: メディアコンテナを作成
-    let create_url = format!("https://graph.threads.net/v1.0/{}/threads", user_id);
-
-    let create_response = client
-        .post(&create_url)
-        .query(&[
-            ("media_type", "TEXT"),
-            ("text", message),
-            ("access_token", &access_token),
-        ])
-        .send()
-        .await
-        .context("Failed to create media container")?;
-
-    let container: CreateContainerResponse = create_response
-        .json()
-        .await
-        .context("Failed to parse container creation response")?;
-
-    // Step 2: コンテナを公開
-    let publish_url = format!("https://graph.threads.net/v1.0/{}/threads_publish", user_id);
-
-    let publish_response = client
-        .post(&publish_url)
-        .query(&[
-            ("creation_id", &container.id),
-            ("access_token", &access_token),
-        ])
-        .send()
-        .await
-        .context("Failed to publish thread")?;
-
-    let publish: PublishResponse = publish_response
-        .json()
-        .await
-        .context("Failed to parse publish response")?;
-
-    // URLを構築
-    let thread_url = format!("https://www.threads.net/@{}/post/{}", user_id, publish.id);
-
-    Ok(thread_url)
-}
+**投稿URL形式**:
 ```
+https://www.threads.com/@{username}/post/{short_id}
+```
+
+**重要な注意点**:
+- User IDは数値ID（ユーザー名ではない）
+- Access Tokenは権限`threads_basic`, `threads_content_publish`が必要
+- パーマリンクはAPIから取得する必要がある（手動生成不可）
 
 **依存**: reqwest, serde, anyhow
-
-**設計のポイント**:
-- Threads API特有の2ステッププロセス（コンテナ作成→公開）
-- OAuth 2.0認証（Meta Graph API）
-- User IDとAccess Tokenで認証
-- レスポンスからPost IDを抽出してURLを構築
-
-**投稿フロー**:
-1. `POST /v1.0/{user-id}/threads` でメディアコンテナ作成
-   - パラメータ: `media_type=TEXT`, `text=メッセージ`, `access_token`
-   - レスポンス: コンテナID
-2. `POST /v1.0/{user-id}/threads_publish` でコンテナを公開
-   - パラメータ: `creation_id=コンテナID`, `access_token`
-   - レスポンス: 投稿ID
-3. 投稿URLを返す
-
-**認証情報**:
-- `THREADS_USER_ID`: Instagram/ThreadsのユーザーID
-- `THREADS_ACCESS_TOKEN`: Long-lived Access Token（60日間有効）
-
----
-
-### 6. 設定管理 (Phase 4以降)
-
-**役割**: 設定ファイルの読み書き（Phase 2以降で実装予定）
-
-```rust
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Config {
-    pub platforms: PlatformConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlatformConfig {
-    pub bluesky: Option<BlueskyConfig>,
-    pub twitter: Option<TwitterConfig>,
-    pub threads: Option<ThreadsConfig>,
-}
-
-impl Config {
-    /// 設定ファイルパス取得
-    pub fn config_path() -> Result<PathBuf> {
-        let proj_dirs = ProjectDirs::from("com", "social-cli", "social-cli")
-            .ok_or_else(|| SocialCliError::ConfigError(
-                "Cannot determine config directory".into()
-            ))?;
-        Ok(proj_dirs.config_dir().join("config.toml"))
-    }
-
-    /// 設定読み込み
-    pub fn load() -> Result<Self> {
-        let path = Self::config_path()?;
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-
-        let content = fs::read_to_string(&path)?;
-        let config: Config = toml::from_str(&content)?;
-        Ok(config)
-    }
-
-    /// 設定保存
-    pub fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
-        let content = toml::to_string_pretty(self)?;
-
-        // ディレクトリ作成
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        // ファイル書き込み
-        fs::write(&path, content)?;
-
-        // パーミッション設定 (Unix系)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&path)?.permissions();
-            perms.set_mode(0o600); // rw-------
-            fs::set_permissions(&path, perms)?;
-        }
-
-        Ok(())
-    }
-}
-```
-
-**設定ファイルパス**:
-- Unix/macOS: `~/.config/social-cli/config.toml`
-- Windows: `%APPDATA%\social-cli\config.toml`
-
-**セキュリティ**:
-- パーミッション: `0o600` (所有者のみ読み書き)
-- 認証情報は含めない（キーチェーンに保存）
-
----
-
-### 4. プラットフォーム抽象化 (src/platforms/traits.rs)
-
-**役割**: SNSプラットフォームの共通インターフェース定義
-
-```rust
-use async_trait::async_trait;
-use crate::error::Result;
-use chrono::{DateTime, Utc};
-
-#[async_trait]
-pub trait SocialPlatform: Send + Sync {
-    /// プラットフォーム名を取得
-    fn name(&self) -> &'static str;
-
-    /// 認証状態を確認
-    async fn verify_credentials(&self) -> Result<bool>;
-
-    /// テキスト投稿
-    async fn post_text(&self, message: &str) -> Result<PostResponse>;
-
-    /// 投稿可能な最大文字数を取得
-    fn max_message_length(&self) -> usize;
-}
-
-#[derive(Debug, Clone)]
-pub struct PostResponse {
-    pub platform: String,
-    pub post_id: String,
-    pub url: Option<String>,
-    pub timestamp: DateTime<Utc>,
-}
-```
-
-**設計原則**:
-- `async_trait`で非同期trait
-- `Send + Sync`でスレッドセーフ
-- 将来の拡張性を考慮（画像投稿等は後で追加）
-
----
-
-### 5. Bluesky実装 (src/platforms/bluesky.rs)
-
-**役割**: Bluesky API クライアント
-
-```rust
-use atrium_api::client::AtpServiceClient;
-use atrium_api::types::string::AtIdentifier;
-use atrium_xrpc_client::reqwest::ReqwestClient;
-
-pub struct BlueskyClient {
-    identifier: String,
-    password: String,
-    client: Option<AtpServiceClient<ReqwestClient>>,
-}
-
-impl BlueskyClient {
-    pub fn new(identifier: String, password: String) -> Self {
-        Self {
-            identifier,
-            password,
-            client: None,
-        }
-    }
-
-    /// セッション作成・認証
-    pub async fn authenticate(&mut self) -> Result<()> {
-        let client = AtpServiceClient::new(
-            ReqwestClient::new("https://bsky.social")
-        );
-
-        // createSessionでログイン
-        let session = client.service.com.atproto.server
-            .create_session(CreateSessionInput {
-                identifier: self.identifier.clone().into(),
-                password: self.password.clone(),
-            })
-            .await
-            .map_err(|e| SocialCliError::AuthError(e.to_string()))?;
-
-        // セッショントークンを保存
-        self.client = Some(client);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl SocialPlatform for BlueskyClient {
-    fn name(&self) -> &'static str {
-        "Bluesky"
-    }
-
-    async fn verify_credentials(&self) -> Result<bool> {
-        // getProfileで認証確認
-        // 実装省略
-        Ok(true)
-    }
-
-    async fn post_text(&self, message: &str) -> Result<PostResponse> {
-        let client = self.client.as_ref()
-            .ok_or_else(|| SocialCliError::AuthError(
-                "Not authenticated".into()
-            ))?;
-
-        // create_recordでポスト作成
-        // 実装詳細は省略
-
-        Ok(PostResponse {
-            platform: "Bluesky".to_string(),
-            post_id: "...".to_string(),
-            url: Some(format!("https://bsky.app/profile/{}/post/{}",
-                self.identifier, "...")),
-            timestamp: Utc::now(),
-        })
-    }
-
-    fn max_message_length(&self) -> usize {
-        300
-    }
-}
-```
-
----
-
-### 6. 認証情報管理 (src/utils/keyring.rs)
-
-**役割**: OSキーチェーンでの認証情報保存
-
-```rust
-use keyring::Entry;
-use crate::error::Result;
-
-const SERVICE_NAME: &str = "social-cli";
-
-/// Bluesky App Password を保存
-pub fn save_bluesky_password(identifier: &str, password: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, &format!("bluesky:{}", identifier))?;
-    entry.set_password(password)?;
-    Ok(())
-}
-
-/// Bluesky App Password を取得
-pub fn get_bluesky_password(identifier: &str) -> Result<String> {
-    let entry = Entry::new(SERVICE_NAME, &format!("bluesky:{}", identifier))?;
-    Ok(entry.get_password()?)
-}
-
-/// 認証情報を削除
-pub fn delete_bluesky_password(identifier: &str) -> Result<()> {
-    let entry = Entry::new(SERVICE_NAME, &format!("bluesky:{}", identifier))?;
-    entry.delete_password()?;
-    Ok(())
-}
-```
-
-**対応OS**:
-- macOS: Keychain
-- Windows: Credential Manager
-- Linux: Secret Service (libsecret)
-
----
-
-### 7. コマンド実装 (src/commands/)
-
-#### commands/post.rs
-
-**役割**: 投稿ロジック
-
-```rust
-pub struct PostArgs {
-    #[arg(short, long)]
-    message: String,
-
-    #[arg(short, long, default_value = "all")]
-    platform: String,
-}
-
-pub async fn run(args: PostArgs) -> Result<()> {
-    let config = Config::load()?;
-
-    // 有効なプラットフォームクライアントを構築
-    let mut clients: Vec<Box<dyn SocialPlatform>> = Vec::new();
-
-    // Blueskyクライアント初期化
-    if should_post_to("bluesky", &args.platform) {
-        if let Some(ref bs_config) = config.platforms.bluesky {
-            if bs_config.enabled {
-                let password = keyring::get_bluesky_password(
-                    &bs_config.identifier
-                )?;
-                let mut client = BlueskyClient::new(
-                    bs_config.identifier.clone(),
-                    password
-                );
-                client.authenticate().await?;
-                clients.push(Box::new(client));
-            }
-        }
-    }
-
-    // 並列投稿
-    let post_futures = clients.iter().map(|client| {
-        let message = args.message.clone();
-        async move {
-            client.post_text(&message).await
-        }
-    });
-
-    let results = join_all(post_futures).await;
-
-    // 結果表示
-    for (i, result) in results.into_iter().enumerate() {
-        match result {
-            Ok(response) => {
-                println!("✓ {} - Posted successfully", response.platform);
-                if let Some(url) = response.url {
-                    println!("  URL: {}", url);
-                }
-            }
-            Err(e) => {
-                eprintln!("✗ Platform {} - Failed: {}", i, e);
-            }
-        }
-    }
-
-    Ok(())
-}
-```
 
 ---
 
@@ -769,196 +232,99 @@ pub async fn run(args: PostArgs) -> Result<()> {
 
 ### 並列投稿の仕組み
 
-```rust
-// 各プラットフォームへの投稿を並列実行
-let post_futures = clients.iter().map(|client| async move {
-    client.post_text(message).await
-});
+全SNS一斉投稿では、各SNSへの投稿を順次実行します（現在は並列化していません）。
 
-// すべての Future を同時実行
-let results = join_all(post_futures).await;
+```rust
+// Blueskyに投稿
+match bluesky::post(&message).await {
+    Ok(post_url) => println!("✓ Posted to Bluesky successfully!"),
+    Err(e) => println!("✗ Failed to post to Bluesky: {}", e),
+}
+
+// Xに投稿
+match x::post(&message).await {
+    Ok(post_url) => println!("✓ Posted to X successfully!"),
+    Err(e) => println!("✗ Failed to post to X: {}", e),
+}
+
+// Threadsに投稿
+match threads::post(&message).await {
+    Ok(post_url) => println!("✓ Posted to Threads successfully!"),
+    Err(e) => println!("✗ Failed to post to Threads: {}", e),
+}
 ```
 
-**利点**:
-- 複数SNSへの投稿を並行処理で高速化
-- 一つのSNSが失敗しても他は継続
+**特徴**:
+- 各SNSの投稿は順次実行（シンプルさ優先）
+- 1つのSNSが失敗しても次のSNSへの投稿は継続
+- すべての結果を個別に表示
 
 ---
 
 ## エラーハンドリング戦略
 
-### 1. 階層的エラー処理
+### 1. シンプルなエラー処理
 
+```rust
+use anyhow::{Context, Result};
+
+let identifier = env::var("BLUESKY_IDENTIFIER")
+    .context("BLUESKY_IDENTIFIER not set in .env file")?;
 ```
-User Error (表示用)
-    ↑
-SocialCliError (カスタムエラー)
-    ↑
-Platform Specific Error (各APIのエラー)
-```
+
+**特徴**:
+- `anyhow::Result<T>`で統一
+- `.context()`でエラーメッセージを追加
+- `?`演算子で簡潔にエラー伝播
 
 ### 2. 部分的失敗の許容
 
 ```rust
-// 投稿結果を個別に処理
-let success_count = results.iter().filter(|r| r.is_ok()).count();
-println!("Summary: {}/{} posts succeeded", success_count, total);
-
-// 一部でも成功していればOK
-if success_count > 0 {
-    Ok(())
-} else {
-    Err(SocialCliError::ApiError { ... })
-}
-```
-
-### 3. リトライロジック（将来実装）
-
-```rust
-async fn post_with_retry(
-    client: &dyn SocialPlatform,
-    message: &str,
-    max_retries: usize,
-) -> Result<PostResponse> {
-    for attempt in 1..=max_retries {
-        match client.post_text(message).await {
-            Ok(response) => return Ok(response),
-            Err(e) if should_retry(&e) => {
-                tokio::time::sleep(Duration::from_secs(2_u64.pow(attempt as u32))).await;
-            }
-            Err(e) => return Err(e),
-        }
+// 個別SNSのエラーは表示するが、他のSNSへの投稿は継続
+match bluesky::post(&message).await {
+    Ok(post_url) => {
+        println!("✓ Posted to Bluesky successfully!");
+        println!("  {}", post_url);
     }
-    Err(SocialCliError::ApiError { ... })
+    Err(e) => {
+        println!("✗ Failed to post to Bluesky: {}", e);
+    }
 }
 ```
+
+**利点**:
+- 1つのSNSが失敗しても全体は失敗しない
+- ユーザーは成功したSNSと失敗したSNSを個別に確認できる
 
 ---
 
-## 拡張性
+## 依存関係
 
-### 新規プラットフォーム追加手順
+| カテゴリ | クレート | バージョン | 用途 |
+|---------|---------|-----------|------|
+| CLI | clap | 4.5 | コマンドライン引数パーサー |
+| 非同期 | tokio | 1.42 | 非同期ランタイム |
+| HTTP | reqwest | 0.12 | HTTP クライアント |
+| Bluesky | atrium-api | 0.25 | Bluesky API クライアント |
+| Bluesky | atrium-xrpc-client | 0.5 | AT Protocol XRPC通信 |
+| X (Twitter) | reqwest-oauth1 | 0.7 | OAuth 1.0a署名 |
+| 環境変数 | dotenvy | 0.15 | .env読み込み |
+| エラー | anyhow | 1.0 | シンプルなエラー処理 |
+| シリアライズ | serde | 1.0 | データ構造シリアライズ |
+| JSON | serde_json | 1.0 | JSON変換 |
 
-1. `src/platforms/newplatform.rs` 作成
-2. `SocialPlatform` trait を実装
-3. `src/platforms/mod.rs` に追加
-4. `src/config.rs` に設定構造体追加
-5. `src/commands/setup.rs` にセットアップロジック追加
-6. `src/commands/post.rs` に初期化ロジック追加
-
-**例**: Threads追加
-
-```rust
-// src/platforms/threads.rs
-pub struct ThreadsClient {
-    access_token: String,
-}
-
-#[async_trait]
-impl SocialPlatform for ThreadsClient {
-    fn name(&self) -> &'static str {
-        "Threads"
-    }
-
-    async fn verify_credentials(&self) -> Result<bool> {
-        // Meta Graph API で認証確認
-    }
-
-    async fn post_text(&self, message: &str) -> Result<PostResponse> {
-        // Threads API で投稿
-    }
-
-    fn max_message_length(&self) -> usize {
-        500
-    }
-}
-```
+**必要なRustバージョン**: 1.85以降（atrium-xrpc-client 0.5が必要）
 
 ---
 
-## パフォーマンス考慮事項
+## セキュリティ設計
 
-### 1. 非同期I/O
-
-- すべてのネットワーク呼び出しは`async/await`
-- `tokio`ランタイムで効率的な並行処理
-
-### 2. 設定ファイルキャッシュ
-
-- 起動時に一度だけ読み込み
-- 実行中は不変（イミュータブル）
-
-### 3. HTTPコネクションプール
-
-- `reqwest`で自動的にコネクションプール
-- 複数リクエストでコネクション再利用
-
----
-
-## テスタビリティ
-
-### モック実装
-
-```rust
-#[cfg(test)]
-pub struct MockPlatform {
-    should_fail: bool,
-}
-
-#[async_trait]
-impl SocialPlatform for MockPlatform {
-    fn name(&self) -> &'static str {
-        "Mock"
-    }
-
-    async fn verify_credentials(&self) -> Result<bool> {
-        Ok(!self.should_fail)
-    }
-
-    async fn post_text(&self, _message: &str) -> Result<PostResponse> {
-        if self.should_fail {
-            Err(SocialCliError::ApiError {
-                platform: "Mock".to_string(),
-                message: "Simulated failure".to_string(),
-            })
-        } else {
-            Ok(PostResponse {
-                platform: "Mock".to_string(),
-                post_id: "mock123".to_string(),
-                url: None,
-                timestamp: Utc::now(),
-            })
-        }
-    }
-
-    fn max_message_length(&self) -> usize {
-        280
-    }
-}
-```
-
----
-
-## 依存関係グラフ
-
-```
-main.rs
-  └─> commands/{setup, post, status}
-       ├─> config.rs
-       │    └─> utils/keyring.rs
-       └─> platforms/traits.rs
-            └─> platforms/{bluesky, twitter, threads}
-                 └─> External APIs
-```
-
----
-
-## セキュリティ境界
+### 認証情報管理
 
 ```mermaid
 graph TB
     subgraph Trusted["信頼ゾーン (Trusted Zone)"]
-        App[Application Code<br/>main.rs / bluesky.rs]
+        App[Application Code<br/>main.rs / *.rs]
         Env[.env ファイル<br/>パーミッション: 0o600]
     end
 
@@ -976,17 +342,69 @@ graph TB
 ```
 
 **セキュリティ上の重要事項**:
-- `.env` ファイルは必ず `.gitignore` に追加
-- ファイルパーミッションを `0o600` (所有者のみ読み書き可) に設定
-- すべてのAPI通信はHTTPSで暗号化
-- ログに認証情報を出力しない
+1. `.env`ファイルは`.gitignore`に追加（コミット防止）
+2. ファイルパーミッションを`0o600`に設定（所有者のみ読み書き可）
+3. すべてのAPI通信はHTTPSで暗号化
+4. ログに認証情報を出力しない
+5. App Passwordを使用（Bluesky）
+6. OAuth認証を使用（X、Threads）
+
+---
+
+## 拡張性
+
+### 新規SNS追加手順
+
+将来的に新しいSNSを追加する場合の手順：
+
+1. `src/newplatform.rs`を作成
+2. `pub async fn post(message: &str) -> Result<String>`関数を実装
+3. `src/main.rs`にサブコマンドを追加
+4. `.env.example`に認証情報テンプレートを追加
+5. ドキュメントを更新
+
+**例**: Mastodon追加
+```rust
+// src/mastodon.rs
+pub async fn post(message: &str) -> Result<String> {
+    let instance = env::var("MASTODON_INSTANCE")?;
+    let access_token = env::var("MASTODON_ACCESS_TOKEN")?;
+
+    // Mastodon APIで投稿
+    // ...
+
+    Ok(post_url)
+}
+```
+
+---
+
+## パフォーマンス考慮事項
+
+### 1. 非同期I/O
+
+- すべてのネットワーク呼び出しは`async/await`
+- `tokio`ランタイムで効率的な非同期処理
+- ブロッキング処理なし
+
+### 2. HTTPコネクションプール
+
+- `reqwest`で自動的にコネクションプール
+- 複数リクエストでコネクション再利用
+- TLS/SSL接続の効率化
+
+### 3. メモリ効率
+
+- 小さなバイナリサイズ（リリースビルド）
+- 最小限の依存関係
+- ゼロコピー処理（可能な場合）
 
 ---
 
 ## 次のステップ
 
-詳細な実装については以下を参照：
+詳細な情報については以下を参照：
 
-- [setup.md](setup.md) - セットアップ手順
-- [api-integration.md](api-integration.md) - API統合詳細
-- [security.md](security.md) - セキュリティ考慮事項
+- [setup.md](setup.md) - 環境構築ガイド
+- [usage.md](usage.md) - 使用方法とコマンドリファレンス
+- [security.md](security.md) - セキュリティのベストプラクティス
