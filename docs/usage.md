@@ -1,34 +1,42 @@
 # 使用方法
 
-**重要**: このドキュメントは、**完成後の使い方を示す設計書**です。現在（Phase 1 MVP）では一部の機能のみ実装予定で、多くの機能はPhase 2以降に実装されます。
+**重要**: このドキュメントは、**現在の使い方と将来の拡張計画**を示しています。Phase 1-2の基本機能は実装済みで、Phase 3以降の機能は計画段階です。
 
 ## 実装状況
 
-| 機能 | Phase 1 (MVP) | Phase 2以降 |
-|------|--------------|------------|
-| Bluesky投稿 (`post -m`) | ✅ **実装済み** | - |
+| 機能 | Phase 1-2 (実装済み) | Phase 3以降 |
+|------|---------------------|------------|
+| Bluesky投稿 (`bluesky -m`) | ✅ **実装済み** | - |
+| X投稿 (`x -m`) | ✅ **実装済み** | - |
 | 投稿URLの表示 | ✅ **実装済み** | - |
-| X投稿 | - | ⏳ 計画中 |
 | Threads投稿 | - | ⏳ 計画中 |
+| 複数SNS同時投稿 | - | ⏳ 計画中 |
 | `setup` コマンド | - | ⏳ 計画中 |
 | `status` コマンド | - | ⏳ 計画中 |
 | 設定ファイル管理 | - | ⏳ 計画中 |
 
-**MVP (Phase 1)の使い方**:
+**現在の使い方（Phase 1-2）**:
 ```bash
 # .env ファイルを設定（手動）
 cp .env.example .env
-nano .env  # 認証情報を入力
+nano .env  # BlueskyとXの認証情報を入力
 
 # Blueskyに投稿
-cargo run -- post -m "Hello, world!"
+cargo run -- bluesky -m "Hello, Bluesky!"
 
 # 出力:
-# ✓ Posted successfully!
+# ✓ Posted to Bluesky successfully!
 # View your post: https://bsky.app/profile/user.bsky.social/post/abc123
+
+# Xに投稿
+cargo run -- x -m "Hello, X!"
+
+# 出力:
+# ✓ Posted to X successfully!
+# View your tweet: https://x.com/i/web/status/1234567890123456789
 ```
 
-以下は、完成後の理想的な使い方を示しています。
+以下は、将来の拡張機能（Phase 3以降）の理想的な使い方を示しています。
 
 ---
 

@@ -6,36 +6,46 @@ Social CLIは、プラットフォーム抽象化レイヤーを中心とした�
 
 ---
 
-## システムアーキテクチャ図（MVP）
+## システムアーキテクチャ図（Phase 1-2 実装済み）
 
 ```mermaid
 graph TD
     User[User / CLI] --> Main[src/main.rs<br/>CLIパーサー: clap]
 
-    Main --> Post[post コマンド]
+    Main --> BlueskyCmd[bluesky コマンド]
+    Main --> XCmd[x コマンド]
 
-    Post --> Env[.env ファイル<br/>BLUESKY_IDENTIFIER<br/>BLUESKY_APP_PASSWORD]
+    BlueskyCmd --> Env[.env ファイル]
+    XCmd --> Env
 
-    Post --> Bluesky[src/bluesky.rs<br/>Bluesky投稿ロジック]
+    BlueskyCmd --> BlueskyMod[src/bluesky.rs<br/>Bluesky投稿ロジック]
+    XCmd --> XMod[src/x.rs<br/>X投稿ロジック]
 
-    Bluesky --> Env
-    Bluesky --> AtriumAPI[atrium-api<br/>Bluesky API Client]
+    BlueskyMod --> AtriumAPI[atrium-api<br/>Bluesky API Client]
+    XMod --> OAuth1[reqwest-oauth1<br/>OAuth 1.0a署名]
 
     AtriumAPI --> BlueskyAPI[Bluesky API<br/>https://bsky.social]
+    OAuth1 --> XAPI[X API v2<br/>https://api.twitter.com/2/tweets]
+
+    Env -.-> |BLUESKY_*| BlueskyMod
+    Env -.-> |X_*| XMod
 
     style User fill:#e1f5ff
     style Main fill:#fff4e1
-    style Bluesky fill:#e8f5e9
+    style BlueskyMod fill:#e8f5e9
+    style XMod fill:#e3f2fd
     style Env fill:#ffe1e1
     style BlueskyAPI fill:#f3e5f5
+    style XAPI fill:#e8eaf6
 ```
 
-**MVP構成の特徴**:
-- シンプルな2ファイル構成（main.rs + bluesky.rs）
+**Phase 1-2 構成の特徴**:
+- 3ファイル構成（main.rs + bluesky.rs + x.rs）
 - .env ファイルで認証情報管理
-- Bluesky のみサポート（Phase 1）
+- BlueskyとX (Twitter) の両方をサポート
+- 個別のサブコマンド（`bluesky`, `x`）で投稿先を選択
 
-### 将来のアーキテクチャ（Phase 2以降）
+### 将来のアーキテクチャ（Phase 3以降）
 
 ```mermaid
 graph TD
@@ -70,7 +80,7 @@ graph TD
 
 ## モジュール設計
 
-### 1. エントリーポイント (src/main.rs) - MVP実装
+### 1. エントリーポイント (src/main.rs) - Phase 1-2 実装
 
 **役割**: CLIパーサーとサブコマンドルーティング
 
@@ -80,6 +90,7 @@ use clap::{Parser, Subcommand};
 use anyhow::Result;
 
 mod bluesky;
+mod x;
 
 #[derive(Parser)]
 #[command(name = "social-cli")]
@@ -92,8 +103,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Post a message to Bluesky
-    Post {
-        /// Message to post
+    Bluesky {
+        #[arg(short, long)]
+        message: String,
+    },
+    /// Post a message to X (Twitter)
+    X {
         #[arg(short, long)]
         message: String,
     },
@@ -101,16 +116,20 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load .env file
     dotenvy::dotenv().ok();
-
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Post { message } => {
+        Commands::Bluesky { message } => {
             let post_url = bluesky::post(&message).await?;
-            println!("✓ Posted successfully!");
+            println!("✓ Posted to Bluesky successfully!");
             println!("View your post: {}", post_url);
+            Ok(())
+        }
+        Commands::X { message } => {
+            let post_url = x::post(&message).await?;
+            println!("✓ Posted to X successfully!");
+            println!("View your tweet: {}", post_url);
             Ok(())
         }
     }
@@ -119,13 +138,16 @@ async fn main() -> Result<()> {
 
 **依存**: clap, tokio, anyhow, dotenvy
 
-**Phase 2以降の拡張予定**:
+**Phase 3以降の拡張予定**:
 ```rust
 #[derive(Subcommand)]
 enum Commands {
     Setup(SetupArgs),
-    Post(PostArgs),
+    Post(PostArgs),      // 複数SNS同時投稿
     Status(StatusArgs),
+    Bluesky(BlueskyArgs),
+    X(XArgs),
+    Threads(ThreadsArgs),
 }
 ```
 
@@ -229,7 +251,92 @@ pub async fn post(message: &str) -> Result<String> {
 
 ---
 
-### 4. 設定管理 (Phase 2以降)
+### 4. Xモジュール (src/x.rs) - Phase 2 実装
+
+**役割**: X (Twitter) 投稿機能
+
+**現在の実装**:
+```rust
+use anyhow::{Context, Result};
+use reqwest::Client;
+use reqwest_oauth1::{OAuthClientProvider, Secrets};
+use serde_json::json;
+use std::env;
+
+/// Post a message to X (Twitter)
+/// Returns the URL of the created tweet
+pub async fn post(message: &str) -> Result<String> {
+    // 環境変数から認証情報を取得
+    let consumer_key = env::var("X_CONSUMER_KEY")
+        .context("X_CONSUMER_KEY not set in .env file")?;
+    let consumer_secret = env::var("X_CONSUMER_SECRET")
+        .context("X_CONSUMER_SECRET not set in .env file")?;
+    let access_token = env::var("X_ACCESS_TOKEN")
+        .context("X_ACCESS_TOKEN not set in .env file")?;
+    let access_token_secret = env::var("X_ACCESS_TOKEN_SECRET")
+        .context("X_ACCESS_TOKEN_SECRET not set in .env file")?;
+
+    // OAuth1 secretsを作成
+    let secrets = Secrets::new(consumer_key, consumer_secret)
+        .token(access_token, access_token_secret);
+
+    // HTTPクライアント作成
+    let client = Client::new();
+
+    // ツイートペイロードを作成
+    let payload = json!({ "text": message });
+    let payload_str = serde_json::to_string(&payload)?;
+
+    // X API v2エンドポイント
+    let url = "https://api.twitter.com/2/tweets";
+
+    // OAuth1署名付きPOSTリクエストを送信
+    let response = client
+        .oauth1(secrets)
+        .post(url)
+        .header("Content-Type", "application/json")
+        .body(payload_str)
+        .send()
+        .await
+        .context("Failed to send request to X API")?;
+
+    // レスポンスをパース
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse X API response")?;
+
+    // Tweet IDを抽出
+    let tweet_id = response_json
+        .get("data")
+        .and_then(|data| data.get("id"))
+        .and_then(|id| id.as_str())
+        .context("Failed to extract tweet ID")?;
+
+    // URLを構築
+    let tweet_url = format!("https://x.com/i/web/status/{}", tweet_id);
+
+    Ok(tweet_url)
+}
+```
+
+**依存**: reqwest, reqwest-oauth1, serde_json, anyhow
+
+**設計のポイント**:
+- OAuth 1.0a署名を`reqwest-oauth1`で自動処理
+- X API v2の`/2/tweets`エンドポイントを使用
+- JSONペイロードを手動で文字列化（reqwest-oauth1の制約）
+- レスポンスからTweet IDを抽出してURLを構築
+
+**認証フロー**:
+1. 環境変数から4つのOAuth 1.0a認証情報を取得
+2. `Secrets`オブジェクトを作成
+3. `reqwest`クライアントに`.oauth1()`で署名を追加
+4. X API v2にPOSTリクエスト送信
+
+---
+
+### 5. 設定管理 (Phase 3以降)
 
 **役割**: 設定ファイルの読み書き（Phase 2以降で実装予定）
 
