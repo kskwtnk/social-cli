@@ -137,15 +137,55 @@ View your thread: https://www.threads.com/@username/post/abc123xyz
 cargo post -m "新機能をリリースしました！"
 ```
 
-### 2. 複数行メッセージ
+### 2. エディタモード（推奨）
+
+`-m`オプションを省略すると、エディタが起動して複数行メッセージを編集できます。
 
 ```bash
-cargo post -m "これは複数行の
-メッセージです。
-改行も含められます。"
+# 全SNSに投稿（エディタが開く）
+cargo post
+
+# 個別SNSに投稿（エディタが開く）
+cargo post bluesky
+cargo post x
+cargo post threads
 ```
 
-### 3. リリースビルド使用
+**エディタの設定**:
+```bash
+# 環境変数EDITORでエディタを指定（未設定の場合はvimが使用されます）
+export EDITOR=nano        # nanoを使用
+export EDITOR=code --wait # VS Codeを使用（--waitが必要）
+export EDITOR=emacs       # Emacsを使用
+```
+
+エディタ内では：
+- 1行目から自由にメッセージを入力
+- `#`で始まる行はコメント（投稿されません）
+- 保存して閉じると投稿が実行されます
+- 空のメッセージで保存すると投稿がキャンセルされます
+
+### 3. コマンドラインで複数行メッセージ
+
+エディタを使わず、コマンドラインで直接複数行を指定することもできます。
+
+```bash
+# シェルの$'...'構文を使用（推奨）
+cargo post -m $'1行目\n2行目\n3行目'
+
+# ファイルから読み込む
+cargo post -m "$(cat message.txt)"
+
+# ヒアドキュメントを使用
+cargo post -m "$(cat << 'EOF'
+これは複数行の
+メッセージです。
+改行も含められます。
+EOF
+)"
+```
+
+### 4. リリースビルド使用
 
 ```bash
 # ビルド
@@ -158,7 +198,7 @@ cargo build --release
 ./target/release/social-cli bluesky -m "Blueskyのみ"
 ```
 
-### 4. シェルスクリプトでの自動投稿
+### 5. シェルスクリプトでの自動投稿
 
 ```bash
 #!/bin/bash
@@ -168,7 +208,7 @@ MESSAGE="$(date '+%Y年%m月%d日')の定期投稿です"
 cargo post -m "$MESSAGE"
 ```
 
-### 5. ファイルから投稿
+### 6. ファイルから投稿
 
 ```bash
 # message.txtの内容を投稿

@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use anyhow::Result;
 
 mod bluesky;
+mod editor;
 mod threads;
 mod x;
 
@@ -21,21 +22,21 @@ struct Cli {
 enum Commands {
     /// Post a message to Bluesky only
     Bluesky {
-        /// Message to post
+        /// Message to post (opens editor if not provided)
         #[arg(short, long)]
-        message: String,
+        message: Option<String>,
     },
     /// Post a message to X (Twitter) only
     X {
-        /// Message to post
+        /// Message to post (opens editor if not provided)
         #[arg(short, long)]
-        message: String,
+        message: Option<String>,
     },
     /// Post a message to Threads only
     Threads {
-        /// Message to post
+        /// Message to post (opens editor if not provided)
         #[arg(short, long)]
-        message: String,
+        message: Option<String>,
     },
 }
 
@@ -48,18 +49,21 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Bluesky { message }) => {
+            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
             let post_url = bluesky::post(&message).await?;
             println!("✓ Posted to Bluesky successfully!");
             println!("View your post: {}", post_url);
             Ok(())
         }
         Some(Commands::X { message }) => {
+            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
             let post_url = x::post(&message).await?;
             println!("✓ Posted to X successfully!");
             println!("View your tweet: {}", post_url);
             Ok(())
         }
         Some(Commands::Threads { message }) => {
+            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
             let post_url = threads::post(&message).await?;
             println!("✓ Posted to Threads successfully!");
             println!("View your thread: {}", post_url);
@@ -67,9 +71,7 @@ async fn main() -> Result<()> {
         }
         None => {
             // Post to all platforms
-            let message = cli.message.ok_or_else(|| {
-                anyhow::anyhow!("Message is required. Use -m or --message flag.")
-            })?;
+            let message = cli.message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
 
             println!("Posting to all platforms...\n");
 

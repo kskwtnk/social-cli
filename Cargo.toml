@@ -35,3 +35,6 @@ chrono = "0.4"
 
 # X (Twitter) API
 reqwest-oauth1 = "0.3.0"
+
+# エディタ起動用
+tempfile = "3.13"
