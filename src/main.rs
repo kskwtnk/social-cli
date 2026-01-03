@@ -6,6 +6,39 @@ mod editor;
 mod threads;
 mod x;
 
+/// Supported social media platforms
+#[derive(Debug, Clone, Copy)]
+enum Platform {
+    Bluesky,
+    X,
+    Threads,
+}
+
+impl Platform {
+    /// Get the display name of the platform
+    fn name(&self) -> &'static str {
+        match self {
+            Platform::Bluesky => "Bluesky",
+            Platform::X => "X",
+            Platform::Threads => "Threads",
+        }
+    }
+
+    /// Post a message to this platform
+    async fn post(&self, message: &str) -> Result<String> {
+        match self {
+            Platform::Bluesky => bluesky::post(message).await,
+            Platform::X => x::post(message).await,
+            Platform::Threads => threads::post(message).await,
+        }
+    }
+
+    /// Get all platforms
+    fn all() -> Vec<Platform> {
+        vec![Platform::Bluesky, Platform::X, Platform::Threads]
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "social-cli")]
 #[command(about = "Multi-platform social media posting CLI tool", long_about = None)]
@@ -40,6 +73,32 @@ enum Commands {
     },
 }
 
+/// Get message from option or open editor
+fn get_message(message_opt: Option<String>) -> Result<String> {
+    message_opt.map(Ok).unwrap_or_else(|| editor::open_editor())
+}
+
+/// Post to a single platform and display result
+async fn post_to_platform(platform: Platform, message: &str) -> Result<()> {
+    let post_url = platform.post(message).await?;
+    println!("✓ Posted to {} successfully!", platform.name());
+    println!("View your post: {}", post_url);
+    Ok(())
+}
+
+/// Post to a platform with error handling (for multi-platform posting)
+async fn post_to_platform_safe(platform: Platform, message: &str) {
+    match platform.post(message).await {
+        Ok(post_url) => {
+            println!("✓ Posted to {} successfully!", platform.name());
+            println!("  {}", post_url);
+        }
+        Err(e) => {
+            println!("✗ Failed to post to {}: {}", platform.name(), e);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env file
@@ -49,63 +108,25 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Bluesky { message }) => {
-            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
-            let post_url = bluesky::post(&message).await?;
-            println!("✓ Posted to Bluesky successfully!");
-            println!("View your post: {}", post_url);
-            Ok(())
+            let message = get_message(message)?;
+            post_to_platform(Platform::Bluesky, &message).await
         }
         Some(Commands::X { message }) => {
-            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
-            let post_url = x::post(&message).await?;
-            println!("✓ Posted to X successfully!");
-            println!("View your tweet: {}", post_url);
-            Ok(())
+            let message = get_message(message)?;
+            post_to_platform(Platform::X, &message).await
         }
         Some(Commands::Threads { message }) => {
-            let message = message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
-            let post_url = threads::post(&message).await?;
-            println!("✓ Posted to Threads successfully!");
-            println!("View your thread: {}", post_url);
-            Ok(())
+            let message = get_message(message)?;
+            post_to_platform(Platform::Threads, &message).await
         }
         None => {
             // Post to all platforms
-            let message = cli.message.map(Ok).unwrap_or_else(|| editor::open_editor())?;
+            let message = get_message(cli.message)?;
 
             println!("Posting to all platforms...\n");
 
-            // Post to Bluesky
-            match bluesky::post(&message).await {
-                Ok(post_url) => {
-                    println!("✓ Posted to Bluesky successfully!");
-                    println!("  {}", post_url);
-                }
-                Err(e) => {
-                    println!("✗ Failed to post to Bluesky: {}", e);
-                }
-            }
-
-            // Post to X
-            match x::post(&message).await {
-                Ok(post_url) => {
-                    println!("✓ Posted to X successfully!");
-                    println!("  {}", post_url);
-                }
-                Err(e) => {
-                    println!("✗ Failed to post to X: {}", e);
-                }
-            }
-
-            // Post to Threads
-            match threads::post(&message).await {
-                Ok(post_url) => {
-                    println!("✓ Posted to Threads successfully!");
-                    println!("  {}", post_url);
-                }
-                Err(e) => {
-                    println!("✗ Failed to post to Threads: {}", e);
-                }
+            for platform in Platform::all() {
+                post_to_platform_safe(platform, &message).await;
             }
 
             println!("\nPosting complete!");
