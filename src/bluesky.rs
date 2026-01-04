@@ -24,7 +24,10 @@ pub async fn post(message: &str) -> Result<String> {
     let session = agent
         .login(&identifier, &password)
         .await
-        .context("Failed to authenticate with Bluesky. Please check your credentials.")?;
+        .map_err(|e| {
+            eprintln!("DEBUG - Bluesky login error: {:?}", e);
+            anyhow::anyhow!("Failed to authenticate with Bluesky. Please check your credentials. Original error: {:?}", e)
+        })?;
 
     // Create post record
     let record = atrium_api::app::bsky::feed::post::RecordData {

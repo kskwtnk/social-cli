@@ -41,7 +41,10 @@ pub async fn post(message: &str) -> Result<String> {
         .body(payload_str)
         .send()
         .await
-        .context("Failed to send request to X API")?;
+        .map_err(|e| {
+            eprintln!("DEBUG - X API request error: {:?}", e);
+            anyhow::anyhow!("Failed to send request to X API. Original error: {:?}", e)
+        })?;
 
     // Check response status
     let status = response.status();

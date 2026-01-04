@@ -40,7 +40,10 @@ pub async fn post(message: &str) -> Result<String> {
         ])
         .send()
         .await
-        .context("Failed to create media container")?;
+        .map_err(|e| {
+            eprintln!("DEBUG - Threads create container error: {:?}", e);
+            anyhow::anyhow!("Failed to create media container. Original error: {:?}", e)
+        })?;
 
     let status = create_response.status();
     if !status.is_success() {
