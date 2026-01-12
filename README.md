@@ -1,5 +1,8 @@
 # social-cli
 
+> [!CAUTION]
+> https://github.com/kskwtnk/social-hub に移行しました。
+
 Rust製のマルチSNS投稿CLIツール。
 Bluesky、X (Twitter)、Threadsに一斉投稿できます。
 
